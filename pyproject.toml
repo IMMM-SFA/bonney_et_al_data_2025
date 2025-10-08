@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "toolkit"
-description = "supporting functions for dataset generartion and machine learning"
+description = "Supporting functions for repository analysis"
 readme = "README.md"
 version = "0.0.1"
 authors = [
@@ -16,18 +16,21 @@ maintainers = [
 requires-python = ">=3.8"
 
 dependencies = [
-    "numpy==1.26", 
-    "scipy", 
-    "pandas==2.2.0", 
-    "matplotlib==3.8.2",
-    "torch==2.2.1",
-    "hmmlearn==0.3.0",
-    "optuna==4.0.0",
-    "h5py",
-    "seaborn==0.13.1",
-    "pysal",
-    "esda",
-    "pyyaml"
+      "numpy", 
+      "pandas",
+      "xarray",
+      "matplotlib",
+      "seaborn",
+      "h5py",
+      "hmmlearn",
+      "optuna",
+      "pyyaml",
+      "pytensor",
+      "pymc",
+      "arviz",
+      "scipy",
+      "pysal",
+      "esda",
     ]
 
 classifiers = [

@@ -18,6 +18,7 @@ data_root = outputs_path / "9505" / "raw"  # Change to actual data directory
 output_root = outputs_path / "9505" / "reach_subset"  # Change this to where you want to save the files
 output_root.mkdir(parents=True, exist_ok=True)
 
+desired_reaches = pd.read_csv(repo_data_path / "configs" / "reaches_of_interest.csv")
 
 ### Functions ###
 def process_huc8_file(nc_file, desired_reaches):
@@ -185,9 +186,6 @@ def process_all_folders(data_root, desired_reaches):
             process_folder(folder, desired_reaches)
 
 ### Main ###
-
-# load reaches to fetch
-desired_reaches = pd.read_csv(repo_data_path / "reaches_of_interest.csv")
 
 desired_reaches = list(desired_reaches.iloc[:, 1])
 

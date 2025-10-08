@@ -7,7 +7,8 @@ __all__ = [
 
 import json
 from os.path import abspath, dirname, join
+from pathlib import Path
 
-repo_data_path = join(dirname(abspath(str(__file__))), "..", "data")
-outputs_path = join(dirname(abspath(str(__file__))), "..", "outputs")
+repo_data_path = Path(join(dirname(abspath(str(__file__))), "..", "data"))
+outputs_path = Path(join(dirname(abspath(str(__file__))), "..", "outputs"))
 

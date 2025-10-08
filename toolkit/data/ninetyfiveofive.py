@@ -69,7 +69,7 @@ def load_historical_data(
     # Aggregate to annual values if requested
     if aggregate_annually:
         logger.info("Aggregating historical data to annual values...")
-        hist_data = hist_data.resample('Y').sum()
+        hist_data = hist_data.resample('YE').sum()
     
     # Apply log1p transformation if requested
     if log1p_transform:

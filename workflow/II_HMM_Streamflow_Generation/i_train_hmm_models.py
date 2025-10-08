@@ -13,7 +13,7 @@ import arviz as az
 
 
 ### Settings ###
-FORCE_RECOMPUTE = False # Whether to recompute the model if it already exists
+FORCE_RECOMPUTE = True # Whether to recompute the model if it already exists
 LOG_TRANSFORM = True # Whether to log transform the data
 PERIOD = "2020_2059" # Time period of 9505 data used for training
 
