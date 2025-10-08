@@ -4,6 +4,7 @@ This script trains Bayesian Hidden Markov Models (HMM) on the 9505 data.
 import numpy as np
 from pathlib import Path
 import json
+import argparse
 import matplotlib.pyplot as plt
 from toolkit.hmm.model import BayesianStreamflowHMM
 from toolkit.data.ninetyfiveofive import load_doe_data, load_historical_data
@@ -121,19 +122,48 @@ def train_basin_hmm(basin_name, basin, ensemble_filters, filter_name):
 
 ### Main ###
 
-# Load basin configuration from JSON
-with open(basins_path, "r") as f:
-    BASINS = json.load(f)
-
-# Load ensemble filters configuration from JSON
-with open(ensemble_filters_path, "r") as f:
-    ENSEMBLE_CONFIG = json.load(f)
-
-# Iterate over each ensemble filter set
-for filter_set in ENSEMBLE_CONFIG["filter_sets"]:
-    filter_name = filter_set["name"]
-    ensemble_filters = filter_set["filters"]
+def main():
+    # Parse command line arguments
+    parser = argparse.ArgumentParser(description='Train HMM models for specific filter-basin combinations')
+    parser.add_argument('--filter', help='Filter name to process (e.g., basic, cooler, hotter)')
+    parser.add_argument('--basin', help='Basin name to process (e.g., Colorado, Trinity, Brazos)')
+    args = parser.parse_args()
     
-    # Train HMM for each basin with the current filter set
-    for basin_name, basin in BASINS.items():
-        train_basin_hmm(basin_name, basin, ensemble_filters, filter_name)
+    # Load basin configuration from JSON
+    with open(basins_path, "r") as f:
+        BASINS = json.load(f)
+
+    # Load ensemble filters configuration from JSON
+    with open(ensemble_filters_path, "r") as f:
+        ENSEMBLE_CONFIG = json.load(f)
+
+    # Filter processing based on arguments
+    if args.filter:
+        filter_sets = [fs for fs in ENSEMBLE_CONFIG["filter_sets"] if fs["name"] == args.filter]
+        if not filter_sets:
+            print(f"Error: Filter '{args.filter}' not found in configuration")
+            return
+    else:
+        filter_sets = ENSEMBLE_CONFIG["filter_sets"]
+    
+    if args.basin:
+        if args.basin not in BASINS:
+            print(f"Error: Basin '{args.basin}' not found in configuration")
+            return
+        basins = {args.basin: BASINS[args.basin]}
+    else:
+        basins = BASINS
+
+    # Process selected combinations
+    for filter_set in filter_sets:
+        filter_name = filter_set["name"]
+        ensemble_filters = filter_set["filters"]
+        
+        print(f"Processing filter: {filter_name}")
+        
+        for basin_name, basin in basins.items():
+            print(f"  Training HMM for basin: {basin_name}")
+            train_basin_hmm(basin_name, basin, ensemble_filters, filter_name)
+
+if __name__ == "__main__":
+    main()

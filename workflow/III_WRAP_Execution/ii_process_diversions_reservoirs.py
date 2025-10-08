@@ -9,6 +9,7 @@ import numpy as np
 import pandas as pd
 from pathlib import Path
 import json
+import argparse
 import xarray as xr
 from toolkit import repo_data_path, outputs_path
 
@@ -227,31 +228,61 @@ def process_diversions_and_reservoirs(synthetic_data_path, diversions_csvs_path,
             print(f"Successfully appended reservoir {variable_name} data to {synthetic_data_path}")
 
 ### Main ###
-# Load basin configuration and variable metadata
-with open(basins_path, "r") as f:
-    BASINS = json.load(f)
 
-# Load ensemble filters configuration
-ensemble_filters_path = repo_data_path / "configs" / "ensemble_filters_basic.json"
-with open(ensemble_filters_path, "r") as f:
-    ENSEMBLE_CONFIG = json.load(f)
+def main():
+    # Parse command line arguments
+    parser = argparse.ArgumentParser(description='Process diversions and reservoirs for specific filter-basin combinations')
+    parser.add_argument('--filter', help='Filter name to process (e.g., basic, cooler, hotter)')
+    parser.add_argument('--basin', help='Basin name to process (e.g., Colorado, Trinity, Brazos)')
+    args = parser.parse_args()
 
-# Load variable metadata
-with open(metadata_path, 'r') as f:
-    VARIABLE_METADATA = json.load(f)
+    # Load basin configuration and variable metadata
+    with open(basins_path, "r") as f:
+        BASINS = json.load(f)
 
-# Iterate through filters and basins
-for filter_name, filter_set in ENSEMBLE_CONFIG.items():
-    for basin_name, basin in BASINS.items():
-        gage_name = basin["gage_name"]
+    # Load ensemble filters configuration
+    ensemble_filters_path = repo_data_path / "configs" / "ensemble_filters_basic.json"
+    with open(ensemble_filters_path, "r") as f:
+        ENSEMBLE_CONFIG = json.load(f)
+
+    # Load variable metadata
+    with open(metadata_path, 'r') as f:
+        VARIABLE_METADATA = json.load(f)
+
+    # Filter processing based on arguments
+    if args.filter:
+        if args.filter not in ENSEMBLE_CONFIG:
+            print(f"Error: Filter '{args.filter}' not found in configuration")
+            return
+        filter_items = [(args.filter, ENSEMBLE_CONFIG[args.filter])]
+    else:
+        filter_items = ENSEMBLE_CONFIG.items()
+    
+    if args.basin:
+        if args.basin not in BASINS:
+            print(f"Error: Basin '{args.basin}' not found in configuration")
+            return
+        basins = {args.basin: BASINS[args.basin]}
+    else:
+        basins = BASINS
+
+    # Process selected combinations
+    for filter_name, filter_set in filter_items:
+        print(f"Processing filter: {filter_name}")
         
-        print(f"Processing basin: {basin_name} with filter: {filter_name}")
-        
-        # Initialize paths
-        synthetic_data_path = outputs_path / "bayesian_hmm" / f"{gage_name}_{filter_name}_model" / f"{basin_name.lower()}_results" / f"{basin_name.lower().replace(' ', '_')}_{filter_name}_synthetic_streamflow.nc"
-        diversions_csvs_path = outputs_path / "wrap_results" / basin_name / "diversions"
-        reservoirs_csvs_path = outputs_path / "wrap_results" / basin_name / "reservoirs"
-        
-        # Check if paths exist before processing
-        process_diversions_and_reservoirs(synthetic_data_path, diversions_csvs_path, reservoirs_csvs_path)
+        for basin_name, basin in basins.items():
+            gage_name = basin["gage_name"]
+            
+            print(f"  Processing basin: {basin_name} with filter: {filter_name}")
+            
+            # Initialize paths
+            synthetic_data_path = outputs_path / "bayesian_hmm" / f"{gage_name}_{filter_name}_model" / f"{basin_name.lower()}_results" / f"{basin_name.lower().replace(' ', '_')}_{filter_name}_synthetic_streamflow.nc"
+            diversions_csvs_path = outputs_path / "wrap_results" / basin_name / "diversions"
+            reservoirs_csvs_path = outputs_path / "wrap_results" / basin_name / "reservoirs"
+            
+            # Process diversions and reservoirs
+            process_diversions_and_reservoirs(synthetic_data_path, diversions_csvs_path, reservoirs_csvs_path)
+
+if __name__ == "__main__":
+    main()
 
