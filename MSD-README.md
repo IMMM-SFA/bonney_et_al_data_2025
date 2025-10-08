@@ -18,7 +18,8 @@ The main data file is a NetCDF file containing synthetic streamflow and shortage
 - **`site`**: Streamflow gage sites (e.g., INA10000, INA20000, etc.)
 - **`year`**: Annual time steps for hidden states
 - **`parameter`**: HMM parameter labels
-- **`right_id`**: Water right identifiers for shortage data
+- **`right_id`**: Water right identifiers for diversion data
+- **`reservoir_id`**: Reservoir identifiers for reservoir data
 
 #### Data Variables
 
@@ -57,6 +58,105 @@ The main data file is a NetCDF file containing synthetic streamflow and shortage
   - `long_name`: "HMM model parameters"
   - `description`: "Hidden Markov Model parameters for each ensemble member"
 
+##### 5. `diversion_diversion_or_energy_shortage`
+- **Description**: Water shortage for diversions or energy generation from WRAP model simulation
+- **Dimensions**: `[ensemble, time, right_id]`
+- **Units**: acre-feet
+- **Attributes**:
+  - `long_name`: "Diversion Or Energy Shortage"
+  - `description`: "Water shortage for diversions or energy generation from WRAP model simulation"
+  - `standard_name`: "diversion_shortage"
+
+##### 6. `diversion_diversion_or_energy_target`
+- **Description**: Target water allocation for diversions or energy generation from WRAP model simulation
+- **Dimensions**: `[ensemble, time, right_id]`
+- **Units**: acre-feet
+- **Attributes**:
+  - `long_name`: "Diversion Or Energy Target"
+  - `description`: "Target water allocation for diversions or energy generation from WRAP model simulation"
+  - `standard_name`: "diversion_target"
+
+##### 7. `diversion_shortage_ratio`
+- **Description**: Water shortage ratio from WRAP model simulation
+- **Dimensions**: `[ensemble, time, right_id]`
+- **Units**: ratio [0-1]
+- **Attributes**:
+  - `long_name`: "Water Shortage Ratio"
+  - `description`: "Water shortage ratio from WRAP model simulation (1 - (target - shortage) / target). 0 means no shortage, 1 means full shortage"
+  - `standard_name`: "shortage_ratio"
+
+##### 8. `reservoir_reservoir_water_surface_elevation`
+- **Description**: Water surface elevation of reservoirs from WRAP model simulation
+- **Dimensions**: `[ensemble, time, reservoir_id]`
+- **Units**: feet
+- **Attributes**:
+  - `long_name`: "Reservoir Water Surface Elevation"
+  - `description`: "Water surface elevation of reservoirs from WRAP model simulation"
+  - `standard_name`: "reservoir_elevation"
+
+##### 9. `reservoir_reservoir_storage_capacity`
+- **Description**: Storage capacity of reservoirs from WRAP model simulation
+- **Dimensions**: `[ensemble, time, reservoir_id]`
+- **Units**: acre-feet
+- **Attributes**:
+  - `long_name`: "Reservoir Storage Capacity"
+  - `description`: "Storage capacity of reservoirs from WRAP model simulation"
+  - `standard_name`: "reservoir_capacity"
+
+##### 10. `reservoir_inflows_to_reservoir_from_stream_flow_depletions`
+- **Description**: Inflows to reservoirs from stream flow depletions from WRAP model simulation
+- **Dimensions**: `[ensemble, time, reservoir_id]`
+- **Units**: acre-feet
+- **Attributes**:
+  - `long_name`: "Reservoir Inflows From Stream Flow Depletions"
+  - `description`: "Inflows to reservoirs from stream flow depletions from WRAP model simulation"
+  - `standard_name`: "reservoir_inflow_depletions"
+
+##### 11. `reservoir_inflows_to_reservoir_from_releases_from_other_reservoirs`
+- **Description**: Inflows to reservoirs from releases of other reservoirs from WRAP model simulation
+- **Dimensions**: `[ensemble, time, reservoir_id]`
+- **Units**: acre-feet
+- **Attributes**:
+  - `long_name`: "Reservoir Inflows From Other Reservoir Releases"
+  - `description`: "Inflows to reservoirs from releases of other reservoirs from WRAP model simulation"
+  - `standard_name`: "reservoir_inflow_releases"
+
+##### 12. `reservoir_reservoir_net_evaporation_precipitation_volume`
+- **Description**: Net evaporation and precipitation volume for reservoirs from WRAP model simulation
+- **Dimensions**: `[ensemble, time, reservoir_id]`
+- **Units**: acre-feet
+- **Attributes**:
+  - `long_name`: "Reservoir Net Evaporation Precipitation Volume"
+  - `description`: "Net evaporation and precipitation volume for reservoirs from WRAP model simulation"
+  - `standard_name`: "reservoir_net_evap_precip"
+
+##### 13. `reservoir_energy_generated`
+- **Description**: Energy generated from hydroelectric power from WRAP model simulation
+- **Dimensions**: `[ensemble, time, reservoir_id]`
+- **Units**: MWh
+- **Attributes**:
+  - `long_name`: "Energy Generated"
+  - `description`: "Energy generated from hydroelectric power from WRAP model simulation"
+  - `standard_name`: "energy_generated"
+
+##### 14. `reservoir_reservoir_releases_accessible_to_hydroelectric_power_turbines`
+- **Description**: Reservoir releases accessible to hydroelectric power turbines from WRAP model simulation
+- **Dimensions**: `[ensemble, time, reservoir_id]`
+- **Units**: acre-feet
+- **Attributes**:
+  - `long_name`: "Reservoir Releases Accessible To Hydroelectric Power Turbines"
+  - `description`: "Reservoir releases accessible to hydroelectric power turbines from WRAP model simulation"
+  - `standard_name`: "reservoir_releases_turbines"
+
+##### 15. `reservoir_reservoir_releases_not_accessible_to_hydroelectric_power_turbines`
+- **Description**: Reservoir releases not accessible to hydroelectric power turbines from WRAP model simulation
+- **Dimensions**: `[ensemble, time, reservoir_id]`
+- **Units**: acre-feet
+- **Attributes**:
+  - `long_name`: "Reservoir Releases Not Accessible To Hydroelectric Power Turbines"
+  - `description`: "Reservoir releases not accessible to hydroelectric power turbines from WRAP model simulation"
+  - `standard_name`: "reservoir_releases_non_turbines"
+
 #### Coordinate Variables
 
 ##### 1. `ensemble`
@@ -84,6 +184,10 @@ The main data file is a NetCDF file containing synthetic streamflow and shortage
 - **Description**: Water right identifiers
 - **Values**: Water right IDs from WRAP model
 
+##### 7. `reservoir_id`
+- **Description**: Reservoir identifiers
+- **Values**: Reservoir IDs from WRAP model
+
 ## CSV File Structure
 
 The extraction scripts produce organized CSV files for each ensemble member:
@@ -103,9 +207,25 @@ outputs/ensemble_csvs/{basin_name}/
 │   ├── annual_states_ensemble_00.csv
 │   ├── annual_states_ensemble_01.csv
 │   └── ...
-└── hmm_parameters/
-    ├── hmm_parameters_ensemble_00.csv
-    ├── hmm_parameters_ensemble_01.csv
+├── hmm_parameters/
+│   ├── hmm_parameters_ensemble_00.csv
+│   ├── hmm_parameters_ensemble_01.csv
+│   └── ...
+├── diversions/
+│   ├── diversion_diversion_or_energy_shortage_ensemble_00.csv
+│   ├── diversion_diversion_or_energy_shortage_ensemble_01.csv
+│   ├── diversion_diversion_or_energy_target_ensemble_00.csv
+│   ├── diversion_diversion_or_energy_target_ensemble_01.csv
+│   ├── diversion_shortage_ratio_ensemble_00.csv
+│   ├── diversion_shortage_ratio_ensemble_01.csv
+│   └── ...
+└── reservoirs/
+    ├── reservoir_reservoir_water_surface_elevation_ensemble_00.csv
+    ├── reservoir_reservoir_water_surface_elevation_ensemble_01.csv
+    ├── reservoir_reservoir_storage_capacity_ensemble_00.csv
+    ├── reservoir_reservoir_storage_capacity_ensemble_01.csv
+    ├── reservoir_energy_generated_ensemble_00.csv
+    ├── reservoir_energy_generated_ensemble_01.csv
     └── ...
 ```
 
@@ -176,6 +296,36 @@ emission_mean_1,2000.8
 emission_std_1,400.2
 ```
 
+### 5. Diversion CSV Files
+**File**: `diversion_{variable_name}_ensemble_{XX}.csv`
+
+**Columns**:
+- `time`: Monthly timestamps (YYYY-MM-DD format)
+- `{right_id}`: One column for each water right identifier
+
+**Example** (diversion_shortage_ratio_ensemble_00.csv):
+```csv
+time,WR001,WR002,WR003,WR004,WR005,...
+1940-01-01,0.0,0.1,0.0,0.2,0.0,...
+1940-02-01,0.0,0.0,0.0,0.1,0.0,...
+1940-03-01,0.0,0.0,0.0,0.0,0.0,...
+```
+
+### 6. Reservoir CSV Files
+**File**: `reservoir_{variable_name}_ensemble_{XX}.csv`
+
+**Columns**:
+- `time`: Monthly timestamps (YYYY-MM-DD format)
+- `{reservoir_id}`: One column for each reservoir identifier
+
+**Example** (reservoir_reservoir_water_surface_elevation_ensemble_00.csv):
+```csv
+time,RES001,RES002,RES003,RES004,RES005,...
+1940-01-01,1200.5,1150.2,1100.8,1250.1,1180.3,...
+1940-02-01,1198.2,1148.9,1098.5,1248.8,1178.1,...
+1940-03-01,1195.8,1147.3,1096.1,1247.2,1175.8,...
+```
+
 ## Basin Metadata JSON
 `basins.json` contains metadata for the basins. Currently, three attributes are provided:
 - `gage_name`: The name of the WRAP control point at the outflow gage.
@@ -202,6 +352,16 @@ annual_states = ds['annual_states']  # [ensemble, year]
 
 # Access HMM parameters
 hmm_params = ds['hmm_parameters']    # [ensemble, parameter]
+
+# Access diversion data
+diversion_shortage = ds['diversion_diversion_or_energy_shortage']  # [ensemble, time, right_id]
+diversion_target = ds['diversion_diversion_or_energy_target']      # [ensemble, time, right_id]
+shortage_ratio = ds['diversion_shortage_ratio']                    # [ensemble, time, right_id]
+
+# Access reservoir data
+reservoir_elevation = ds['reservoir_reservoir_water_surface_elevation']  # [ensemble, time, reservoir_id]
+reservoir_capacity = ds['reservoir_reservoir_storage_capacity']          # [ensemble, time, reservoir_id]
+energy_generated = ds['reservoir_energy_generated']                      # [ensemble, time, reservoir_id]
 ```
 
 ### Load CSV files in Python:
@@ -219,6 +379,16 @@ annual_states_df = pd.read_csv('annual_states_ensemble_00.csv')
 
 # Load HMM parameters for ensemble 0
 hmm_params_df = pd.read_csv('hmm_parameters_ensemble_00.csv')
+
+# Load diversion data for ensemble 0
+diversion_shortage_df = pd.read_csv('diversion_diversion_or_energy_shortage_ensemble_00.csv', parse_dates=['time'])
+diversion_target_df = pd.read_csv('diversion_diversion_or_energy_target_ensemble_00.csv', parse_dates=['time'])
+shortage_ratio_df = pd.read_csv('diversion_shortage_ratio_ensemble_00.csv', parse_dates=['time'])
+
+# Load reservoir data for ensemble 0
+reservoir_elevation_df = pd.read_csv('reservoir_reservoir_water_surface_elevation_ensemble_00.csv', parse_dates=['time'])
+reservoir_capacity_df = pd.read_csv('reservoir_reservoir_storage_capacity_ensemble_00.csv', parse_dates=['time'])
+energy_generated_df = pd.read_csv('reservoir_energy_generated_ensemble_00.csv', parse_dates=['time'])
 ```
 
 ## Scripts
