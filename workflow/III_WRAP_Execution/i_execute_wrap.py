@@ -55,12 +55,12 @@ def main():
 
     # Filter processing based on arguments
     if args.filter:
-        if args.filter not in ENSEMBLE_CONFIG:
+        filter_sets = [fs for fs in ENSEMBLE_CONFIG if fs["name"] == args.filter]
+        if not filter_sets:
             print(f"Error: Filter '{args.filter}' not found in configuration")
             return
-        filter_items = [(args.filter, ENSEMBLE_CONFIG[args.filter])]
     else:
-        filter_items = ENSEMBLE_CONFIG.items()
+        filter_sets = ENSEMBLE_CONFIG
     
     if args.basin:
         if args.basin not in BASINS:
@@ -71,7 +71,8 @@ def main():
         basins = BASINS
 
     # Process selected combinations
-    for filter_name, filter_set in filter_items:
+    for filter_set in filter_sets:
+        filter_name = filter_set["name"]
         print(f"Processing filter: {filter_name}")
         
         for basin_name, basin in basins.items():
@@ -82,12 +83,12 @@ def main():
             flo_file = Path(repo_data_path) / basin["flo_file"]
             dat_file = flo_file.with_suffix(".DAT")
             base_name = flo_file.stem
-            synthetic_data_path = Path("outputs") / "bayesian_hmm" / f"{gage_name}_{filter_name}_model" /f"{basin_name.lower()}_results" / f"{basin_name.lower().replace(' ', '_')}_{filter_name}_synthetic_streamflow.nc"
-            synthetic_flo_output_path = Path("outputs") / "wrap_results" / basin_name / "synthetic_flos"
-            diversions_csvs_path = Path("outputs") / "wrap_results" / basin_name / "diversions"
-            reservoirs_csvs_path = Path("outputs") / "wrap_results" / basin_name / "reservoirs"
-            out_files_path = Path("outputs") / "wrap_results" / basin_name / "out_files"
-            out_zip_path = Path("outputs") / "wrap_results" / basin_name / "wrap_results.zip"
+            synthetic_data_path = outputs_path / "bayesian_hmm" / f"{filter_name}" /f"{basin_name.lower()}" / f"{filter_name}_{basin_name.lower()}_synthetic_streamflow.nc"
+            synthetic_flo_output_path = outputs_path / "wrap_results" / basin_name / "synthetic_flos"
+            diversions_csvs_path = outputs_path / "wrap_results" / basin_name / "diversions"
+            reservoirs_csvs_path = outputs_path / "wrap_results" / basin_name / "reservoirs"
+            out_files_path = outputs_path/ "wrap_results" / basin_name / "out_files"
+            out_zip_path = outputs_path / "wrap_results" / basin_name / "wrap_results.zip"
 
             # ensure necessary directories exist
             for directory_path in [synthetic_flo_output_path, diversions_csvs_path, reservoirs_csvs_path, out_files_path, out_zip_path]:

@@ -34,7 +34,7 @@ def train_basin_hmm(basin_name, basin, ensemble_filters, filter_name):
     gage_name = basin["gage_name"]
     reach_id = basin["reach_id"]
     flo_file = repo_data_path / basin["flo_file"]
-    output_dir = outputs_path / "bayesian_hmm" / filter_name / f"{basin_name.lower().replace(' ', '_')}_results"
+    output_dir = outputs_path / "bayesian_hmm" / filter_name / f"{basin_name.lower()}"
     output_dir.mkdir(parents=True, exist_ok=True)
     
     # Load historical data separately
@@ -79,7 +79,7 @@ def train_basin_hmm(basin_name, basin, ensemble_filters, filter_name):
     plt.close()
 
     # Model path
-    model_path = output_dir / f"{gage_name}_{filter_name}_model"
+    model_path = output_dir / f"{basin_name}_{filter_name}_model.nc"
 
     # Fit or load model
     if not FORCE_RECOMPUTE and (model_path.with_suffix(".nc")).exists():
@@ -139,12 +139,12 @@ def main():
 
     # Filter processing based on arguments
     if args.filter:
-        filter_sets = [fs for fs in ENSEMBLE_CONFIG["filter_sets"] if fs["name"] == args.filter]
+        filter_sets = [fs for fs in ENSEMBLE_CONFIG if fs["name"] == args.filter]
         if not filter_sets:
             print(f"Error: Filter '{args.filter}' not found in configuration")
             return
     else:
-        filter_sets = ENSEMBLE_CONFIG["filter_sets"]
+        filter_sets = ENSEMBLE_CONFIG
     
     if args.basin:
         if args.basin not in BASINS:

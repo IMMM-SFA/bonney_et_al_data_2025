@@ -140,14 +140,14 @@ def wrap_pipeline(
             value.to_csv(os.path.join(reservoirs_csvs_path, f"{flo_name}_{key}.csv"))
         
         # copy OUT file to out_files_path if specified
-        if out_files_path is not None:
-            out_dest = os.path.join(out_files_path, f"{flo_name}.OUT")
-            shutil.copy2(out_file, out_dest)
+        # if out_files_path is not None:
+        #     out_dest = os.path.join(out_files_path, f"{flo_name}.OUT")
+        #     shutil.copy2(out_file, out_dest)
         
-        # compress out file
-        zip_file = os.path.join(out_zip_path, f"{flo_name}.OUT.zip")
-        with zipfile.ZipFile(zip_file, 'w', zipfile.ZIP_DEFLATED) as myzip:
-            myzip.write(out_file)
+        # # compress out file
+        # zip_file = os.path.join(out_zip_path, f"{flo_name}.OUT.zip")
+        # with zipfile.ZipFile(zip_file, 'w', zipfile.ZIP_DEFLATED) as myzip:
+        #     myzip.write(out_file)
 
         # delete files
         os.remove(out_file)

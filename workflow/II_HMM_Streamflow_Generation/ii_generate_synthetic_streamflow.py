@@ -30,8 +30,6 @@ output_dir = outputs_path / "bayesian_hmm"
 ### Functions ###
 def generate_synthetic_streamflow(basin_name, basin, ensemble_filters, filter_name):
     """Generate synthetic streamflow for a single basin using a trained HMM model."""
-    if basin_name == "Rio Grande":
-        return
     
     gage_name = basin["gage_name"]
     reach_id = basin["reach_id"]
@@ -40,7 +38,7 @@ def generate_synthetic_streamflow(basin_name, basin, ensemble_filters, filter_na
     flo_file = repo_data_path / basin["flo_file"]
     
     # Model path
-    model_path = output_dir / "models" / f"{gage_name}_{filter_name}_model"
+    model_path = output_dir / f"{filter_name}" / f"{basin_name.lower()}" / f"{basin_name}_{filter_name}_model.nc"
     
     # Check if model exists
     if not (model_path.with_suffix(".nc")).exists():
@@ -63,7 +61,7 @@ def generate_synthetic_streamflow(basin_name, basin, ensemble_filters, filter_na
     model = BayesianStreamflowHMM.load(str(model_path))
 
     # Generate synthetic streamflow
-    synthetic_h5_path = output_dir / f"{basin_name.lower().replace(' ', '_')}_{filter_name}_synthetic_streamflow.nc"
+    synthetic_h5_path = output_dir / f"{filter_name}" /f"{basin_name.lower()}" / f"{filter_name}_{basin_name.lower()}_synthetic_streamflow.nc"
 
     if os.path.exists(synthetic_h5_path) and not FORCE_RECOMPUTE:
         synthetic_streamflow_dict = load_netcdf_format(synthetic_h5_path)
@@ -111,12 +109,12 @@ def main():
 
     # Filter processing based on arguments
     if args.filter:
-        filter_sets = [fs for fs in ENSEMBLE_CONFIG["filter_sets"] if fs["name"] == args.filter]
+        filter_sets = [fs for fs in ENSEMBLE_CONFIG if fs["name"] == args.filter]
         if not filter_sets:
             print(f"Error: Filter '{args.filter}' not found in configuration")
             return
     else:
-        filter_sets = ENSEMBLE_CONFIG["filter_sets"]
+        filter_sets = ENSEMBLE_CONFIG
     
     if args.basin:
         if args.basin not in BASINS:

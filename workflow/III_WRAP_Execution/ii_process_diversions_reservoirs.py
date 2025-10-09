@@ -251,12 +251,12 @@ def main():
 
     # Filter processing based on arguments
     if args.filter:
-        if args.filter not in ENSEMBLE_CONFIG:
+        filter_sets = [fs for fs in ENSEMBLE_CONFIG if fs["name"] == args.filter]
+        if not filter_sets:
             print(f"Error: Filter '{args.filter}' not found in configuration")
             return
-        filter_items = [(args.filter, ENSEMBLE_CONFIG[args.filter])]
     else:
-        filter_items = ENSEMBLE_CONFIG.items()
+        filter_sets = ENSEMBLE_CONFIG
     
     if args.basin:
         if args.basin not in BASINS:
@@ -267,7 +267,8 @@ def main():
         basins = BASINS
 
     # Process selected combinations
-    for filter_name, filter_set in filter_items:
+    for filter_set in filter_items:
+        filter_name = filter_set["name"]
         print(f"Processing filter: {filter_name}")
         
         for basin_name, basin in basins.items():
@@ -276,7 +277,7 @@ def main():
             print(f"  Processing basin: {basin_name} with filter: {filter_name}")
             
             # Initialize paths
-            synthetic_data_path = outputs_path / "bayesian_hmm" / f"{gage_name}_{filter_name}_model" / f"{basin_name.lower()}_results" / f"{basin_name.lower().replace(' ', '_')}_{filter_name}_synthetic_streamflow.nc"
+            synthetic_data_path = outputs_path / "bayesian_hmm" / f"{filter_name}" /f"{basin_name.lower()}" / f"{filter_name}_{basin_name.lower()}_synthetic_streamflow.nc"
             diversions_csvs_path = outputs_path / "wrap_results" / basin_name / "diversions"
             reservoirs_csvs_path = outputs_path / "wrap_results" / basin_name / "reservoirs"
             
