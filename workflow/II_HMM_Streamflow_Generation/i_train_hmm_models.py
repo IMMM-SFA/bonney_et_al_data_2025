@@ -79,7 +79,7 @@ def train_basin_hmm(basin_name, basin, ensemble_filters, filter_name):
     plt.close()
 
     # Model path
-    model_path = output_dir / f"{basin_name}_{filter_name}_model.nc"
+    model_path = output_dir / f"{basin_name}_{filter_name}_model"
 
     # Fit or load model
     if not FORCE_RECOMPUTE and (model_path.with_suffix(".nc")).exists():

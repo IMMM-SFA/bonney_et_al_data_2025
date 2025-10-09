@@ -377,7 +377,7 @@ class BayesianStreamflowHMM:
         )
        
         # Load inference data
-        model.idata = az.from_netcdf(f"{filepath}.nc")
+        model.idata = az.from_netcdf(filepath)
        
         return model
 
