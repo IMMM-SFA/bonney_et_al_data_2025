@@ -13,7 +13,7 @@ import xarray as xr
 from toolkit import repo_data_path, outputs_path
 from toolkit.wrap.io import flo_to_df
 from toolkit.data.io import load_netcdf_format
-from toolkit.wrap.wraputils import clean_folders, split_into_sublists, fix_cols
+from toolkit.wrap.wraputils import clean_folders, split_into_sublists, fix_cols, populate_sim_files
 from toolkit.wrap.wraputils import wrap_pipeline, process_ensemble_member
 
 
@@ -89,7 +89,7 @@ def main():
             reservoirs_csvs_path = outputs_path / "wrap_results" / basin_name / "reservoirs"
             out_files_path = outputs_path/ "wrap_results" / basin_name / "out_files"
             out_zip_path = outputs_path / "wrap_results" / basin_name / "wrap_results.zip"
-
+            
             # ensure necessary directories exist
             for directory_path in [synthetic_flo_output_path, diversions_csvs_path, reservoirs_csvs_path, out_files_path, out_zip_path]:
                 if not os.path.exists(directory_path):
@@ -99,6 +99,7 @@ def main():
             # clean_folders(WRAP_EXEC_PATH, shortage_csvs_path)
             # clean_folders(WRAP_EXEC_PATH, None, None)
             clean_folders(WRAP_EXEC_PATH, diversions_csvs_path, reservoirs_csvs_path, synthetic_flo_output_path, out_files_path)
+            populate_sim_files(WRAP_EXEC_PATH, flo_file.parent)
 
             # Check is synthetic flo folder is empty
             if len(os.listdir(synthetic_flo_output_path)) == 0:
@@ -115,7 +116,7 @@ def main():
                 flo_columns = flo_df.columns
                 flo_index = flo_df.index
                 
-                    # Prepare arguments for each ensemble member
+                # Prepare arguments for each ensemble member
                 ensemble_args = []
                 for ens in range(n_ensembles):
                     args = (ens, streamflow, streamflow_index, streamflow_columns, basin_name, flo_df, synthetic_flo_output_path)
@@ -153,7 +154,7 @@ def main():
                     process = multiprocessing.Process(
                         target=wrap_pipeline, 
                         args=(flo_file_list, process_wrap_execution_folder, WRAP_SIM_PATH, 
-                            diversions_csvs_path, reservoirs_csvs_path, out_zip_path, synthetic_flo_output_path, out_files_path)
+                            diversions_csvs_path, reservoirs_csvs_path, out_zip_path, synthetic_flo_output_path, out_files_path, base_name)
                     )
                     processes.append(process)
                     process.start()

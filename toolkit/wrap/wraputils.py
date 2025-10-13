@@ -25,7 +25,6 @@ def clean_folders(
     if execution_directory is not None:
         for directory in next(os.walk(execution_directory))[1]:
             for file in next(os.walk(os.path.join(execution_directory,directory)))[2]:
-                if "OUT" in file or "MSS" in file or "FLO" in file:
                     os.remove(os.path.join(execution_directory,directory, file))
                 
     # clean diversions folder
@@ -51,6 +50,30 @@ def clean_folders(
         for file in next(os.walk(out_files_directory))[2]:
             if "OUT" in file: 
                 os.remove(os.path.join(out_files_directory, file))
+    return
+
+def populate_sim_files(wrap_execution_folder, wam_path):
+    """Populate each execution folder with config in the flo_file parent directory"""
+    if wrap_execution_folder is not None:
+        for directory in next(os.walk(wrap_execution_folder))[1]:
+            for file in next(os.walk(wam_path))[2]:
+                if "dat" in file.lower():
+                    # copy file to execution folder
+                    shutil.copy(os.path.join(wam_path, file), os.path.join(wrap_execution_folder, directory, file))
+                elif "dis" in file.lower():
+                    # copy file to execution folder
+                    shutil.copy(os.path.join(wam_path, file), os.path.join(wrap_execution_folder, directory, file))
+                elif "eva" in file.lower():
+                    # copy file to execution folder
+                    shutil.copy(os.path.join(wam_path, file), os.path.join(wrap_execution_folder, directory, file))
+                elif "fad" in file.lower():
+                    # copy file to execution folder
+                    shutil.copy(os.path.join(wam_path, file), os.path.join(wrap_execution_folder, directory, file))
+                elif "his" in file.lower():
+                    # copy file to execution folder
+                    shutil.copy(os.path.join(wam_path, file), os.path.join(wrap_execution_folder, directory, file))
+    return
+
 
 def split_into_sublists(lst, n):
     """Basic function to split a list into n sublists of roughly equal size.
@@ -80,7 +103,8 @@ def wrap_pipeline(
     reservoirs_csvs_path,
     out_zip_path,
     synthetic_flo_output_path,
-    out_files_path=None):
+    out_files_path=None,
+    base_name="C3"):
     """For each FLO file: copy FLO file to execution folder, run wrap, 
     process the OUT file, compresses the original OUT file, and delete the 
     OUT, MSS, and FLO file for the run.
@@ -103,7 +127,7 @@ def wrap_pipeline(
         flo_file = os.path.join(synthetic_flo_output_path, flo_file)
         
         # execute wrap
-        driver.execute(flo_file=flo_file,
+        driver.execute(base_name=base_name, flo_file=flo_file,
                     execution_folder=wrap_execution_folder)
         
         # process .OUT file
