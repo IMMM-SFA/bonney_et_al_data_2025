@@ -20,7 +20,7 @@ PERIOD = "2020_2059" # Time period of 9505 data used for training
 
 ### Path Configuration ###
 basins_path = repo_data_path / "configs" / "basins.json"
-ensemble_filters_path = repo_data_path / "configs" / "ensemble_filters_basic.json"
+ensemble_filters_path = repo_data_path / "configs" / "ensemble_filters.json"
 # ensemble_filters_path = repo_data_path / "configs" / "ensemble_filters.json"
 nc_file_path = outputs_path / "9505" / "reach_subset_combined" / f"master_streamflow_{PERIOD}_af.nc"
 

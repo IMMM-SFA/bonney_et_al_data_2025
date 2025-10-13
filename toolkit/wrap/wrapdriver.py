@@ -18,7 +18,7 @@ class WRAPDriver:
             shutil.copyfile(flo_file, join(execution_folder, f"{base_name}.FLO"))
         
         # execute wrap
-        commandline = f"(echo {base_name} && echo {base_name}) | wine {self.wrap_exe_path}"
+        commandline = f"(echo {base_name} && echo {base_name}) | taskset -c 0-63 wine64 {self.wrap_exe_path}"
         cmdmsg = subprocess.run(
             commandline, 
             cwd=execution_folder, 
