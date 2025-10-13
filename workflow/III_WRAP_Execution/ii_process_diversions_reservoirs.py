@@ -267,7 +267,7 @@ def main():
         basins = BASINS
 
     # Process selected combinations
-    for filter_set in filter_items:
+    for filter_set in filter_sets:
         filter_name = filter_set["name"]
         print(f"Processing filter: {filter_name}")
         

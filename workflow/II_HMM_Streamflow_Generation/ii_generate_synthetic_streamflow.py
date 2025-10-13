@@ -38,7 +38,7 @@ def generate_synthetic_streamflow(basin_name, basin, ensemble_filters, filter_na
     flo_file = repo_data_path / basin["flo_file"]
     
     # Model path
-    model_path = output_dir / f"{filter_name}" / f"{basin_name.lower()}" / f"{basin_name}_{filter_name}_model.nc"
+    model_path = output_dir / f"{filter_name}" / f"{basin_name.lower()}" / f"{basin_name}_{filter_name}_model"
     
     # Check if model exists
     if not (model_path.with_suffix(".nc")).exists():
