@@ -40,7 +40,7 @@ def df_to_flo(flo_df: DataFrame, filename: str):
     filename : str
         _description_
     """
-    # IDs = pd.Series(WRfAP_IDS)
+    # IDs = pd.Series(WRAP_IDS)
     IDs = flo_df.columns.to_list()
     stations = flo_df.shape[1]
 
