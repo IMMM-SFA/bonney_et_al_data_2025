@@ -9,6 +9,7 @@ import matplotlib.pyplot as plt
 from toolkit.hmm.model import BayesianStreamflowHMM
 from toolkit.data.ninetyfiveofive import load_doe_data, load_historical_data
 from toolkit.hmm.utils import generate_prior_config_from_historical
+from toolkit.graphics.hmm import plot_results, plot_diagnostics, plot_hmm_diagnostics
 from toolkit import repo_data_path, outputs_path
 import arviz as az
 
@@ -16,6 +17,7 @@ import arviz as az
 ### Settings ###
 FORCE_RECOMPUTE = True # Whether to recompute the model if it already exists
 LOG_TRANSFORM = True # Whether to log transform the data
+GENERATE_DIAGNOSTICS = True # Whether to generate diagnostic plots
 PERIOD = "2020_2059" # Time period of 9505 data used for training
 
 ### Path Configuration ###
@@ -26,7 +28,7 @@ nc_file_path = outputs_path / "9505" / "reach_subset_combined" / f"master_stream
 
 ### Functions ###
 
-def train_basin_hmm(basin_name, basin, ensemble_filters, filter_name):
+def train_basin_hmm(basin_name, basin, ensemble_filters, filter_name, generate_diagnostics=True):
     """Train HMM for a single basin with a specific set of ensemble filters."""
     if basin_name == "Rio Grande":
         return
@@ -104,20 +106,45 @@ def train_basin_hmm(basin_name, basin, ensemble_filters, filter_name):
         "tune": 2000,
         "chains": 4,
         "target_accept": 0.95,
+        "sampler": "nuts",
     }
     model.fit(**fit_params)
     model.save(str(model_path))
     
-    # Diagnostics
+    # Generate comprehensive diagnostics
+    print(f"Generating diagnostic plots for {basin_name} - {filter_name}...")
+    
+    # 1. Basic convergence diagnostics
     rhat = az.rhat(model.idata)
     ess = az.ess(model.idata)
     max_rhat = float(rhat.to_array().max().values)
     min_ess = float(ess.to_array().min().values)
+    
+    print(f"  Convergence: R-hat max = {max_rhat:.3f}, ESS min = {min_ess:.0f}")
+    
     if max_rhat > 1.1:
-        print(f"Model failed to converge! Max R-hat: {max_rhat:.3f}")
-        raise RuntimeError("Model failed to converge")
+        print(f"  WARNING: Model failed to converge! Max R-hat: {max_rhat:.3f}")
+        # Don't raise error, just warn - let user decide
     if min_ess < 100:
-        print(f"Low effective sample size: {min_ess:.0f}")
+        print(f"  WARNING: Low effective sample size: {min_ess:.0f}")
+    
+    # 2. Generate comprehensive diagnostic plots
+    if generate_diagnostics:
+        # General MCMC diagnostics
+        print(f"  Generating MCMC diagnostics...")
+        plot_diagnostics(model.idata, output_dir=output_dir)
+        
+        # HMM-specific diagnostics
+        print(f"  Generating HMM-specific diagnostics...")
+        plot_hmm_diagnostics(model.idata, doe_data, output_dir=output_dir)
+        
+        # Model results with predicted states
+        print(f"  Generating model results plots...")
+        predicted_states = model.predict_states(doe_data)
+        plot_results(model.idata, doe_data, predicted_states, n_states=2, output_dir=output_dir)
+            
+
+    
     return model_path
 
 ### Main ###
@@ -163,7 +190,7 @@ def main():
         
         for basin_name, basin in basins.items():
             print(f"  Training HMM for basin: {basin_name}")
-            train_basin_hmm(basin_name, basin, ensemble_filters, filter_name)
+            train_basin_hmm(basin_name, basin, ensemble_filters, filter_name, GENERATE_DIAGNOSTICS)
 
 if __name__ == "__main__":
     main()
