@@ -104,56 +104,70 @@ class BayesianStreamflowHMM:
             # Order constraint to prevent label switching
             pm.Potential("order_constraint", -pt.maximum(0, mu[0] - mu[1]) * 1e6)
            
-            # Forward algorithm for each ensemble member
-            for m in range(n_members):
-                # Define forward step function
-                def hmm_step(obs_t, prev_logp, trans_p, mu, sigma):
-                    """
-                    Forward step function for HMM likelihood computation.
-                   
-                    Parameters
-                    ----------
-                    obs_t : scalar
-                        Current observation
-                    prev_logp : vector
-                        Previous log probabilities for each state
-                    trans_p : matrix
-                        Transition probability matrix
-                    mu : vector
-                        State-specific emission means
-                    sigma : vector
-                        State-specific emission standard deviations
-                   
-                    Returns
-                    -------
-                    vector
-                        Current log probabilities for each state
-                    """
-                    # Emission log probabilities for current observation
-                    emission_logp = pm.Normal.logp(obs_t, mu, sigma)
-                   
-                    # Forward step: combine previous probabilities with transitions and emissions
-                    logp_t = pm.logsumexp(
-                        prev_logp.dimshuffle(0, 'x') + pt.log(trans_p) +
-                        emission_logp.dimshuffle('x', 0),
-                        axis=0
-                    )
-                    return logp_t
-               
-                # Initial log probabilities
-                initial_logp = pt.log(initial_dist) + pm.Normal.logp(data[m, 0], mu, sigma)
-               
-                # Scan forward through the sequence
-                logp, _ = scan(
-                    fn=hmm_step,
-                    sequences=data[m, 1:],
-                    outputs_info=initial_logp,
-                    non_sequences=[transition_mat, mu, sigma]
+            # Convert data to PyTensor constant for dimshuffle operations
+            data_pt = pt.as_tensor_variable(data)
+           
+            # Vectorized forward algorithm for all ensemble members
+            # Define forward step function that processes all members at once
+            def hmm_step_vectorized(obs_t_all, prev_logp_all, trans_p, mu, sigma):
+                """
+                Vectorized forward step for all ensemble members simultaneously.
+                
+                Parameters
+                ----------
+                obs_t_all : vector (n_members,)
+                    Current observations for all members
+                prev_logp_all : matrix (n_members, n_states)
+                    Previous log probabilities for all members and states
+                trans_p : matrix (n_states, n_states)
+                    Transition probability matrix
+                mu : vector (n_states,)
+                    State-specific emission means
+                sigma : vector (n_states,)
+                    State-specific emission standard deviations
+                
+                Returns
+                -------
+                matrix (n_members, n_states)
+                    Current log probabilities for all members and states
+                """
+                # Emission log probabilities: (n_members, n_states)
+                emission_logp = pm.Normal.logp(
+                    obs_t_all.dimshuffle(0, 'x'),  # (n_members, 1)
+                    mu.dimshuffle('x', 0),          # (1, n_states)
+                    sigma.dimshuffle('x', 0)        # (1, n_states)
                 )
-               
-                # Total log-likelihood for this ensemble member
-                total_logp = pm.logsumexp(logp[-1])
-                pm.Potential(f"likelihood_{m}", total_logp)
+                
+                # Forward step for all members: (n_members, n_states)
+                logp_t_all = pm.logsumexp(
+                    prev_logp_all.dimshuffle(0, 1, 'x') +  # (n_members, n_states, 1)
+                    pt.log(trans_p + 1e-10).dimshuffle('x', 0, 1) +  # (1, n_states, n_states)
+                    emission_logp.dimshuffle(0, 'x', 1),    # (n_members, 1, n_states)
+                    axis=1
+                )
+                return logp_t_all
+            
+            # Initial log probabilities for all members: (n_members, n_states)
+            initial_logp_all = (
+                pt.log(initial_dist).dimshuffle('x', 0) +  # (1, n_states)
+                pm.Normal.logp(
+                    data_pt[:, 0].dimshuffle(0, 'x'),  # (n_members, 1)
+                    mu.dimshuffle('x', 0),           # (1, n_states)
+                    sigma.dimshuffle('x', 0)         # (1, n_states)
+                )
+            )
+            
+            # Single scan for all members: sequences is (n_years-1, n_members)
+            logp_all, _ = scan(
+                fn=hmm_step_vectorized,
+                sequences=data_pt[:, 1:].T,  # Transpose to (n_years-1, n_members)
+                outputs_info=initial_logp_all,
+                non_sequences=[transition_mat, mu, sigma]
+            )
+            
+            # Total log-likelihood summed across all members: scalar
+            total_logp_all = pt.sum(pm.logsumexp(logp_all[-1], axis=1))
+            pm.Potential("likelihood_all", total_logp_all)
    
     def fit(
         self,
@@ -162,6 +176,7 @@ class BayesianStreamflowHMM:
         tune: int = 2000,
         chains: int = 4,
         target_accept: float = 0.95,
+        sampler: str = "nuts",
     ) -> None:
         """
         Fit the HMM model using MCMC.
@@ -178,21 +193,47 @@ class BayesianStreamflowHMM:
             Number of MCMC chains
         target_accept : float, default=0.95
             Target acceptance rate for NUTS sampler
+        sampler : str, default="nuts"
+            Sampler to use: "nuts", "metropolis", "smc"
         """
         logger.info("Building model...")
         self._build_model(data)
        
-        logger.info("Starting MCMC...")
+        logger.info(f"Starting MCMC with {sampler} sampler...")
         with self.model:
-            # Use NUTS for all variables
-            self.idata = pm.sample(
-                draws=draws,
-                tune=tune,
-                chains=chains,
-                random_seed=self.random_seed,
-                return_inferencedata=True,
-                target_accept=target_accept
-            )
+            if sampler.lower() == "nuts":
+                # Use NUTS sampler (gradient-based, most efficient)
+                self.idata = pm.sample(
+                    draws=draws,
+                    tune=tune,
+                    chains=chains,
+                    random_seed=self.random_seed,
+                    return_inferencedata=True,
+                    target_accept=target_accept,
+                    init="adapt_diag"
+                )
+            elif sampler.lower() == "smc":
+                # Use Sequential Monte Carlo (most robust, no initialization issues)
+                logger.info("Using SMC sampler - this may take longer but is very robust")
+                self.idata = pm.sample_smc(
+                    draws=draws,
+                    chains=chains,
+                    random_seed=self.random_seed,
+                    return_inferencedata=True,
+                )
+            elif sampler.lower() == "metropolis":
+                # Use Metropolis-Hastings (simple, slow but robust)
+                logger.info("Using Metropolis sampler - slower but robust")
+                self.idata = pm.sample(
+                    draws=draws,
+                    tune=tune,
+                    chains=chains,
+                    step=pm.Metropolis(),
+                    random_seed=self.random_seed,
+                    return_inferencedata=True,
+                )
+            else:
+                raise ValueError(f"Unknown sampler: {sampler}. Choose 'nuts', 'smc', or 'metropolis'")
        
         # Check convergence
         rhat = az.rhat(self.idata)
