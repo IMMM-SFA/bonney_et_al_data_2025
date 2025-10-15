@@ -10,6 +10,7 @@ import argparse
 
 from toolkit.hmm.model import BayesianStreamflowHMM
 from toolkit.data.ninetyfiveofive import load_historical_data
+from toolkit.utils.random_seeds import set_random_seeds, get_seed
 from toolkit import repo_data_path, outputs_path
 from toolkit.wrap.io import flo_to_df
 from toolkit.data.io import save_netcdf_format, load_netcdf_format
@@ -57,6 +58,9 @@ def generate_synthetic_streamflow(basin_name, basin, ensemble_filters, filter_na
     # Historical monthly for disaggregation
     hist_monthly = flo_to_df(str(flo_file))
 
+    # Set random seeds for reproducible generation
+    set_random_seeds("hmm_generation")
+    
     # Load trained model
     model = BayesianStreamflowHMM.load(str(model_path))
 
@@ -70,7 +74,7 @@ def generate_synthetic_streamflow(basin_name, basin, ensemble_filters, filter_na
             start_year=2020,
             historical_monthly_data=hist_monthly.values,
             drought=None,
-            random_seed=42,
+            random_seed=get_seed("hmm_generation"),
             site_names=hist_monthly.columns.tolist(),
             time_index=hist_monthly.index.tolist(),
             h5_path=synthetic_h5_path,

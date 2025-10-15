@@ -3,6 +3,7 @@ from typing import Dict, Any
 import logging
 
 from toolkit.wrap.io import flo_to_df
+from toolkit.utils.random_seeds import get_seed
 import numpy as np
 from sklearn.cluster import KMeans
 
@@ -40,7 +41,7 @@ def generate_prior_config_from_historical(
     logger.info(f"Historical std: {std_flow:.3f}")
     
     # Use K-means to get initial estimates of state means and standard deviations
-    kmeans = KMeans(n_clusters=n_states, random_state=42)
+    kmeans = KMeans(n_clusters=n_states, random_state=get_seed("kmeans_clustering"))
     state_labels = kmeans.fit_predict(hist_data.reshape(-1, 1))
     
     # Calculate state-specific statistics
@@ -138,7 +139,7 @@ def generate_prior_config_from_historical_legacy(
         flow_data = np.log1p(flow_data)
     
     # Use K-means to get initial estimates of state means and standard deviations
-    kmeans = KMeans(n_clusters=n_states, random_state=42)
+    kmeans = KMeans(n_clusters=n_states, random_state=get_seed("kmeans_clustering"))
     state_labels = kmeans.fit_predict(flow_data.reshape(-1, 1))
     
     # Calculate state-specific statistics

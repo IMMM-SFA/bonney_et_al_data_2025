@@ -5,6 +5,7 @@ from typing import Optional
 from pathlib import Path
 import pandas as pd
 import logging
+from toolkit.utils.random_seeds import create_numpy_rng
 
 logger = logging.getLogger(__name__)
 
@@ -418,8 +419,9 @@ def plot_hmm_diagnostics(
         # Data distribution by state (simulated)
         # Generate samples from posterior to show state distributions
         n_samples = 1000
-        state_samples = np.random.choice([0, 1], size=n_samples, p=initial_mean)
-        emission_samples = np.random.normal(mu_mean[state_samples], sigma_mean[state_samples])
+        rng = create_numpy_rng("plotting")
+        state_samples = rng.choice([0, 1], size=n_samples, p=initial_mean)
+        emission_samples = rng.normal(mu_mean[state_samples], sigma_mean[state_samples])
         
         ax3.hist(emission_samples[state_samples == 0], bins=30, alpha=0.7, 
                  label='Dry State', color='orange', density=True)
@@ -463,8 +465,9 @@ def plot_hmm_diagnostics(
         # Overlay model predictions - generate samples for the actual data length
         n_data_samples = len(data_flat)
         # Generate state samples for the data length
-        data_state_samples = np.random.choice([0, 1], size=n_data_samples, p=initial_mean)
-        model_samples = np.random.normal(mu_mean[data_state_samples], sigma_mean[data_state_samples])
+        rng = create_numpy_rng("plotting")
+        data_state_samples = rng.choice([0, 1], size=n_data_samples, p=initial_mean)
+        model_samples = rng.normal(mu_mean[data_state_samples], sigma_mean[data_state_samples])
         ax1.hist(model_samples, bins=30, alpha=0.7, label='Model Predictions', density=True, color='red')
         ax1.set_title("Data vs Model Distribution", fontsize=14)
         ax1.set_xlabel("Value")
@@ -577,7 +580,7 @@ def plot_comparison(
     syn_q75 = np.percentile(syn[:, :n_months], 75, axis=0)
 
     # Select 5 random synthetic ensemble members
-    rng = np.random.default_rng(42)
+    rng = create_numpy_rng("plotting")
     n_syn_ens = syn.shape[0]
     random_ens = rng.choice(n_syn_ens, size=min(5, n_syn_ens), replace=False)
 

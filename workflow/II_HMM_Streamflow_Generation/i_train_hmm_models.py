@@ -10,6 +10,7 @@ from toolkit.hmm.model import BayesianStreamflowHMM
 from toolkit.data.ninetyfiveofive import load_doe_data, load_historical_data
 from toolkit.hmm.utils import generate_prior_config_from_historical
 from toolkit.graphics.hmm import plot_results, plot_diagnostics, plot_hmm_diagnostics
+from toolkit.utils.random_seeds import set_random_seeds, get_seed
 from toolkit import repo_data_path, outputs_path
 import arviz as az
 
@@ -94,10 +95,13 @@ def train_basin_hmm(basin_name, basin, ensemble_filters, filter_name, generate_d
         log1p_transform=LOG_TRANSFORM
     )
     
+    # Set random seeds for reproducible training
+    set_random_seeds("hmm_training")
+    
     # Fit HMM
     model = BayesianStreamflowHMM(
         n_states=2,
-        random_seed=42,
+        random_seed=get_seed("hmm_training"),
         prior_config=prior_config
     )
     fit_params = {
