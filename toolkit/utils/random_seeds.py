@@ -131,3 +131,4 @@ def create_numpy_rng(seed_name: str, config_path: Optional[Path] = None) -> np.r
     """
     seed_value = get_seed(seed_name, config_path)
     return np.random.default_rng(seed_value)
+
