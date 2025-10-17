@@ -21,11 +21,12 @@ def clean_folders(
         where i is some integer.
     """
 
-    # clean execution folder
+    # clean execution folder - remove all folders in WRAP_EXEC_PATH
     if execution_directory is not None:
         for directory in next(os.walk(execution_directory))[1]:
-            for file in next(os.walk(os.path.join(execution_directory,directory)))[2]:
-                    os.remove(os.path.join(execution_directory,directory, file))
+            folder_path = os.path.join(execution_directory, directory)
+            shutil.rmtree(folder_path)
+            os.makedirs(folder_path)
                 
     # clean diversions folder
     if diversions_directory is not None:
@@ -52,24 +53,41 @@ def clean_folders(
                 os.remove(os.path.join(out_files_directory, file))
     return
 
-def populate_sim_files(wrap_execution_folder, wam_path):
-    """Populate each execution folder with config in the flo_file parent directory"""
+def populate_sim_files(wrap_execution_folder, wam_path, num_processes):
+    """Populate each execution folder with config in the flo_file parent directory
+    
+    Parameters
+    ----------
+    wrap_execution_folder : str
+        directory that contains execution folders
+    wam_path : str
+        path to directory containing configuration files
+    num_processes : int
+        number of execution folders to create (execution_folder_0 to execution_folder_{num_processes-1})
+    """
     if wrap_execution_folder is not None:
+        # Create execution folders if they don't exist
+        for i in range(num_processes):
+            execution_folder_path = os.path.join(wrap_execution_folder, f"execution_folder_{i}")
+            if not os.path.exists(execution_folder_path):
+                os.makedirs(execution_folder_path)
+        
+        # Populate each execution folder with config files
         for directory in next(os.walk(wrap_execution_folder))[1]:
             for file in next(os.walk(wam_path))[2]:
-                if "dat" in file.lower():
+                if ".dat" in file.lower():
                     # copy file to execution folder
                     shutil.copy(os.path.join(wam_path, file), os.path.join(wrap_execution_folder, directory, file))
-                elif "dis" in file.lower():
+                elif ".dis" in file.lower():
                     # copy file to execution folder
                     shutil.copy(os.path.join(wam_path, file), os.path.join(wrap_execution_folder, directory, file))
-                elif "eva" in file.lower():
+                elif ".eva" in file.lower():
                     # copy file to execution folder
                     shutil.copy(os.path.join(wam_path, file), os.path.join(wrap_execution_folder, directory, file))
-                elif "fad" in file.lower():
+                elif ".fad" in file.lower():
                     # copy file to execution folder
                     shutil.copy(os.path.join(wam_path, file), os.path.join(wrap_execution_folder, directory, file))
-                elif "his" in file.lower():
+                elif ".his" in file.lower():
                     # copy file to execution folder
                     shutil.copy(os.path.join(wam_path, file), os.path.join(wrap_execution_folder, directory, file))
     return

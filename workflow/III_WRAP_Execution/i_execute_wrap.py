@@ -99,7 +99,7 @@ def main():
             # clean_folders(WRAP_EXEC_PATH, shortage_csvs_path)
             # clean_folders(WRAP_EXEC_PATH, None, None)
             clean_folders(WRAP_EXEC_PATH, diversions_csvs_path, reservoirs_csvs_path, synthetic_flo_output_path, out_files_path)
-            populate_sim_files(WRAP_EXEC_PATH, flo_file.parent)
+            populate_sim_files(WRAP_EXEC_PATH, flo_file.parent, num_processes)
 
             # Check is synthetic flo folder is empty
             if len(os.listdir(synthetic_flo_output_path)) == 0:
