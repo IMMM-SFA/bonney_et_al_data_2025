@@ -49,19 +49,19 @@ def df_to_flo(flo_df: DataFrame, filename: str):
     num_years = int(flo_df.shape[0] / 12)
 
     # Create dataframe to populate with formatted FLO data
-    formatted_data = pd.DataFrame(data=np.zeros([stations * num_years, 14]))
+    formatted_data = pd.DataFrame(data=np.zeros([stations * num_years, 14]), dtype=object)
 
     # Format Node ID and Year columns
     Years = list(flo_df.index.year.unique())
     Years_repeating = list(flo_df.index.year)
-    CP_col = pd.Series(np.zeros(num_years * stations))
+    CP_col = pd.Series(index=range(num_years * stations), dtype="string")
     years_FLO = np.zeros(num_years * stations)
     for i in range(num_years):
         years_FLO[i * stations : (i + 1) * stations] = np.ones(stations) * Years[i]
         CP_col.iloc[i * stations : (i + 1) * stations] = IDs
 
-    formatted_data.iloc[:, 0] = CP_col[:].astype("str")
-    formatted_data.iloc[:, 1] = years_FLO[:].astype("int")
+    formatted_data[0] = CP_col.astype("str")
+    formatted_data[1] = years_FLO.astype("int")
 
     for i in range(12):
         formatted_data.iloc[:, 2 + i] = np.zeros(stations * num_years).astype("int")
