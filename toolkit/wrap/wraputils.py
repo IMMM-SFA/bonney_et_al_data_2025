@@ -23,10 +23,8 @@ def clean_folders(
 
     # clean execution folder - remove all folders in WRAP_EXEC_PATH
     if execution_directory is not None:
-        for directory in next(os.walk(execution_directory))[1]:
-            folder_path = os.path.join(execution_directory, directory)
-            shutil.rmtree(folder_path)
-            os.makedirs(folder_path)
+        shutil.rmtree(execution_directory)
+        os.makedirs(execution_directory, exist_ok=True)
                 
     # clean diversions folder
     if diversions_directory is not None:
