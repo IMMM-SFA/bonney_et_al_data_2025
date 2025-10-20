@@ -1,18 +1,16 @@
 """
-Dataset Validation Script for Workflow Outputs
+WRAP Outputs Dataset Validation
 
-This script validates that the produced .nc datasets contain the expected fields
-and structure according to the workflow documentation.
+This script validates the final NetCDF datasets produced by the workflow for
+each filter-basin combination. It assumes the full workflow has completed and
+only checks the NetCDF datasets (no CSV or FLO files).
 
 Validates:
-1. 9505 Master Streamflow datasets (CFS and acre-feet versions)
-2. HMM Model datasets
-3. Synthetic Streamflow datasets (when available)
+1. Synthetic Streamflow NetCDF with integrated WRAP variables (diversions/reservoirs)
 """
 
 import xarray as xr
 import numpy as np
-import pandas as pd
 from pathlib import Path
 import sys
 import json
@@ -29,199 +27,213 @@ ensemble_filters_path = repo_data_path / "configs" / "ensemble_filters_basic.jso
 
 ### Functions ###
 
-def validate_9505_master_streamflow(file_path: Path) -> dict:
-    """Validate 9505 master streamflow dataset structure."""
-    print(f"  Validating 9505 master streamflow: {file_path.name}")
-    
-    try:
-        ds = xr.open_dataset(file_path)
-        results = {
-            "file_path": str(file_path),
-            "file_type": "9505_master_streamflow",
-            "valid": True,
-            "errors": [],
-            "warnings": []
-        }
-        
-        # Check required dimensions
-        required_dims = ["ensemble_id", "time_mn"]
-        for dim in required_dims:
-            if dim not in ds.dims:
-                results["errors"].append(f"Missing required dimension: {dim}")
-                results["valid"] = False
-        
-        # Check for reach variables
-        reach_vars = [var for var in ds.data_vars if var.startswith('reach_')]
-        if not reach_vars:
-            results["errors"].append("No reach variables found")
-            results["valid"] = False
-        else:
-            print(f"    Found {len(reach_vars)} reach variables")
-        
-        # Check units for acre-feet version
-        if "_af.nc" in str(file_path):
-            sample_reach = reach_vars[0] if reach_vars else None
-            if sample_reach and "units" in ds[sample_reach].attrs:
-                units = ds[sample_reach].attrs["units"]
-                if "acre-feet" not in units.lower():
-                    results["warnings"].append(f"Expected acre-feet units, found: {units}")
-        
-        ds.close()
-        
-    except Exception as e:
-        results = {
-            "file_path": str(file_path),
-            "file_type": "9505_master_streamflow",
-            "valid": False,
-            "errors": [f"Failed to open dataset: {str(e)}"],
-            "warnings": []
-        }
-    
-    return results
+def build_synthetic_dataset_path(filter_name: str, basin_name: str) -> Path:
+    return outputs_path / "bayesian_hmm" / f"{filter_name}" / f"{basin_name.lower()}" / f"{filter_name}_{basin_name.lower()}_synthetic_dataset.nc"
 
-def validate_hmm_model(file_path: Path) -> dict:
-    """Validate HMM model dataset structure."""
-    print(f"  Validating HMM model: {file_path.name}")
-    
-    try:
-        ds = xr.open_dataset(file_path)
-        results = {
-            "file_path": str(file_path),
-            "file_type": "hmm_model",
-            "valid": True,
-            "errors": [],
-            "warnings": []
-        }
-        
-        # HMM models can have various structures
-        if len(ds.data_vars) == 0:
-            results["warnings"].append("No data variables found in HMM model")
-        
-        # Check for common HMM model variables
-        expected_vars = ["mu", "sigma", "transition_mat", "initial_dist"]
-        found_vars = [var for var in expected_vars if var in ds.data_vars]
-        if found_vars:
-            print(f"    Found HMM parameters: {found_vars}")
-        
-        ds.close()
-        
-    except Exception as e:
-        results = {
-            "file_path": str(file_path),
-            "file_type": "hmm_model",
-            "valid": False,
-            "errors": [f"Failed to open dataset: {str(e)}"],
-            "warnings": []
-        }
-    
-    return results
-
-def validate_synthetic_streamflow(file_path: Path) -> dict:
+def validate_synthetic_dataset(file_path: Path) -> dict:
     """Validate synthetic streamflow dataset structure."""
     print(f"  Validating synthetic streamflow: {file_path.name}")
     
-    try:
-        ds = xr.open_dataset(file_path)
-        results = {
-            "file_path": str(file_path),
-            "file_type": "synthetic_streamflow",
-            "valid": True,
-            "errors": [],
-            "warnings": []
-        }
+    ds = xr.open_dataset(file_path)
+    results = {
+        "file_path": str(file_path),
+        "file_type": "synthetic_dataset",
+        "valid": True,
+        "errors": [],
+        "warnings": []
+    }
+    
+    # Check required dimensions according to README
+    required_dims = ["ensemble", "time", "site", "year", "parameter"]
+    for dim in required_dims:
+        if dim not in ds.dims:
+            results["errors"].append(f"Missing required dimension: {dim}")
+            results["valid"] = False
+    
+    # Check for right_id dimension (required if shortage data exists)
+    has_shortage = "diversion_shortage_ratio" in ds.data_vars
+    if has_shortage and "right_id" not in ds.dims:
+        results["errors"].append("Missing required dimension: right_id (needed for shortage data)")
+        results["valid"] = False
+    
+    # Check required data variables
+    required_streamflow_data_vars = ["streamflow", "annual_states", "hmm_parameters"]
+    for var in required_streamflow_data_vars:
+        if var not in ds.data_vars:
+            results["errors"].append(f"Missing required data variable: {var}")
+            results["valid"] = False
+    
+    required_diversion_data_vars = ["diversion_diversion_or_energy_shortage", 
+                                    "diversion_diversion_or_energy_target", 
+                                    "diversion_shortage_ratio"]
+    for var in required_diversion_data_vars:
+        if var not in ds.data_vars:
+            results["errors"].append(f"Missing required data variable: {var}")
+            results["valid"] = False
+    
+    required_reservoir_data_vars = [
+        "reservoir_reservoir_releases_not_accessible_to_hydroelectric_power_turbines",
+        "reservoir_reservoir_storage_capacity",
+        "reservoir_reservoir_net_evaporation_precipitation_volume",
+        "reservoir_inflows_to_reservoir_from_releases_from_other_reservoirs",
+        "reservoir_energy_generated",
+        "reservoir_inflows_to_reservoir_from_stream_flow_depletions",
+        "reservoir_reservoir_water_surface_elevation",
+        "reservoir_reservoir_releases_accessible_to_hydroelectric_power_turbines",]
+    for var in required_reservoir_data_vars:
+        if var not in ds.data_vars:
+            results["errors"].append(f"Missing required data variable: {var}")
+            results["valid"] = False
+    
+    # Validate streamflow variable
+    if "streamflow" in ds.data_vars:
+        streamflow = ds["streamflow"]
+        expected_dims = ["ensemble", "time", "site"]
+        if list(streamflow.dims) != expected_dims:
+            results["errors"].append(f"Streamflow dimensions {list(streamflow.dims)} don't match expected {expected_dims}")
+            results["valid"] = False
         
-        # Check required dimensions
-        required_dims = ["ensemble", "time", "site"]
-        for dim in required_dims:
-            if dim not in ds.dims:
-                results["errors"].append(f"Missing required dimension: {dim}")
-                results["valid"] = False
+        # Check units
+        if "units" in streamflow.attrs:
+            units = streamflow.attrs["units"]
+            if "acre-feet" not in units.lower():
+                results["warnings"].append(f"Streamflow units may be incorrect: {units}")
+        else:
+            results["warnings"].append("Streamflow missing units attribute")
         
-        # Check required data variables
-        required_data_vars = ["streamflow", "annual_states", "hmm_parameters"]
-        for var in required_data_vars:
-            if var not in ds.data_vars:
-                results["errors"].append(f"Missing required data variable: {var}")
-                results["valid"] = False
+        # Check other required attributes
+        required_attrs = ["long_name", "description", "standard_name"]
+        for attr in required_attrs:
+            if attr not in streamflow.attrs:
+                results["warnings"].append(f"Streamflow missing {attr} attribute")
+    
+    # Validate shortage variable (if present)
+    if "diversion_shortage_ratio" in ds.data_vars:
+        shortage = ds["diversion_shortage_ratio"]
+        expected_dims = ["ensemble", "time", "right_id"]
+        if list(shortage.dims) != expected_dims:
+            results["errors"].append(f"Shortage dimensions {list(shortage.dims)} don't match expected {expected_dims}")
+            results["valid"] = False
         
-        # Check optional data variables
-        if "shortage" not in ds.data_vars:
-            results["warnings"].append("Optional data variable not found: shortage")
+        # Check units
+        if "units" in shortage.attrs:
+            units = shortage.attrs["units"]
+            if "ratio" not in units.lower():
+                results["warnings"].append(f"Shortage units may be incorrect: {units}")
+        else:
+            results["warnings"].append("Shortage missing units attribute")
         
-        # Validate streamflow variable
-        if "streamflow" in ds.data_vars:
-            streamflow = ds["streamflow"]
-            expected_dims = ["ensemble", "time", "site"]
-            if list(streamflow.dims) != expected_dims:
-                results["errors"].append(f"Streamflow dimensions {list(streamflow.dims)} don't match expected {expected_dims}")
+        # Check other required attributes
+        required_attrs = ["long_name", "description", "standard_name"]
+        for attr in required_attrs:
+            if attr not in shortage.attrs:
+                results["warnings"].append(f"Shortage missing {attr} attribute")
+    
+    # Validate annual_states variable
+    if "annual_states" in ds.data_vars:
+        annual_states = ds["annual_states"]
+        expected_dims = ["ensemble", "year"]
+        if list(annual_states.dims) != expected_dims:
+            results["errors"].append(f"Annual states dimensions {list(annual_states.dims)} don't match expected {expected_dims}")
+            results["valid"] = False
+        
+        # Check valid_range attribute
+        if "valid_range" in annual_states.attrs:
+            valid_range = annual_states.attrs["valid_range"]
+            # Convert to list for comparison to handle numpy arrays
+            valid_range_list = list(valid_range) if hasattr(valid_range, '__iter__') else [valid_range]
+            if valid_range_list != [0, 1]:
+                results["warnings"].append(f"Annual states valid_range should be [0, 1], found: {valid_range}")
+        else:
+            results["warnings"].append("Annual states missing valid_range attribute")
+        
+        # Check other required attributes
+        required_attrs = ["long_name", "description", "standard_name"]
+        for attr in required_attrs:
+            if attr not in annual_states.attrs:
+                results["warnings"].append(f"Annual states missing {attr} attribute")
+    
+    # Validate hmm_parameters variable
+    if "hmm_parameters" in ds.data_vars:
+        hmm_parameters = ds["hmm_parameters"]
+        expected_dims = ["ensemble", "parameter"]
+        if list(hmm_parameters.dims) != expected_dims:
+            results["errors"].append(f"HMM parameters dimensions {list(hmm_parameters.dims)} don't match expected {expected_dims}")
+            results["valid"] = False
+        
+        # Check required attributes
+        required_attrs = ["long_name", "description"]
+        for attr in required_attrs:
+            if attr not in hmm_parameters.attrs:
+                results["warnings"].append(f"HMM parameters missing {attr} attribute")
+    
+    # Validate coordinate variables
+    coord_checks = {
+        "ensemble": "Ensemble member index",
+        "time": "Monthly time steps", 
+        "site": "Streamflow gage site names",
+        "year": "Year labels for annual states",
+        "parameter": "HMM parameter labels"
+    }
+    
+    for coord, description in coord_checks.items():
+        if coord in ds.coords:
+            coord_var = ds[coord]
+            if "long_name" not in coord_var.attrs:
+                results["warnings"].append(f"Coordinate {coord} missing long_name attribute")
+        else:
+            results["warnings"].append(f"Coordinate variable {coord} not found")
+    
+    # Check right_id coordinate if shortage data exists
+    if has_shortage and "right_id" in ds.coords:
+        right_id = ds["right_id"]
+        if "long_name" not in right_id.attrs:
+            results["warnings"].append("Coordinate right_id missing long_name attribute")
+    
+    # Check for diversion variables (added by ii_process_diversions_reservoirs.py)
+    diversion_vars = [var for var in ds.data_vars if var.startswith('diversion_')]
+    if diversion_vars:
+        print(f"    Found {len(diversion_vars)} diversion variables")
+        for var in diversion_vars:
+            diversion = ds[var]
+            expected_dims = ["ensemble", "time", "right_id"]
+            if list(diversion.dims) != expected_dims:
+                results["errors"].append(f"Diversion {var} dimensions {list(diversion.dims)} don't match expected {expected_dims}")
                 results["valid"] = False
             
-            # Check units
-            if "units" in streamflow.attrs:
-                units = streamflow.attrs["units"]
-                if "acre-feet" not in units.lower():
-                    results["warnings"].append(f"Streamflow units may be incorrect: {units}")
-        
-        # Validate annual_states variable
-        if "annual_states" in ds.data_vars:
-            annual_states = ds["annual_states"]
-            expected_dims = ["ensemble", "year"]
-            if list(annual_states.dims) != expected_dims:
-                results["errors"].append(f"Annual states dimensions {list(annual_states.dims)} don't match expected {expected_dims}")
+            # Check required attributes
+            required_attrs = ["long_name", "units", "description", "standard_name"]
+            for attr in required_attrs:
+                if attr not in diversion.attrs:
+                    results["warnings"].append(f"Diversion {var} missing {attr} attribute")
+    
+    # Check for reservoir variables (added by ii_process_diversions_reservoirs.py)
+    reservoir_vars = [var for var in ds.data_vars if var.startswith('reservoir_')]
+    if reservoir_vars:
+        print(f"    Found {len(reservoir_vars)} reservoir variables")
+        for var in reservoir_vars:
+            reservoir = ds[var]
+            expected_dims = ["ensemble", "time", "reservoir_id"]
+            if list(reservoir.dims) != expected_dims:
+                results["errors"].append(f"Reservoir {var} dimensions {list(reservoir.dims)} don't match expected {expected_dims}")
                 results["valid"] = False
-        
-        ds.close()
-        
-    except Exception as e:
-        results = {
-            "file_path": str(file_path),
-            "file_type": "synthetic_streamflow",
-            "valid": False,
-            "errors": [f"Failed to open dataset: {str(e)}"],
-            "warnings": []
-        }
+            
+            # Check required attributes
+            required_attrs = ["long_name", "units", "description", "standard_name"]
+            for attr in required_attrs:
+                if attr not in reservoir.attrs:
+                    results["warnings"].append(f"Reservoir {var} missing {attr} attribute")
+    
+    # Check for reservoir_id coordinate if reservoir data exists
+    if reservoir_vars and "reservoir_id" in ds.coords:
+        reservoir_id = ds["reservoir_id"]
+        if "long_name" not in reservoir_id.attrs:
+            results["warnings"].append("Coordinate reservoir_id missing long_name attribute")
+    
+    ds.close()
     
     return results
 
-def validate_dataset(file_path: Path) -> dict:
-    """Determine file type and validate accordingly."""
-    if not file_path.exists():
-        return {
-            "file_path": str(file_path),
-            "valid": False,
-            "errors": ["File does not exist"],
-            "warnings": []
-        }
-    
-    # Determine file type based on path and name
-    if "master_streamflow" in file_path.name:
-        return validate_9505_master_streamflow(file_path)
-    elif "model.nc" in file_path.name:
-        return validate_hmm_model(file_path)
-    elif "synthetic_streamflow" in file_path.name:
-        return validate_synthetic_streamflow(file_path)
-    else:
-        # Try to determine type by examining the file
-        try:
-            ds = xr.open_dataset(file_path)
-            data_vars = list(ds.data_vars)
-            coords = list(ds.coords)
-            ds.close()
-            
-            # Heuristic classification
-            if "streamflow" in data_vars and "ensemble" in coords:
-                return validate_synthetic_streamflow(file_path)
-            elif any(var.startswith("reach_") for var in data_vars):
-                return validate_9505_master_streamflow(file_path)
-            else:
-                return validate_hmm_model(file_path)
-        except:
-            return {
-                "file_path": str(file_path),
-                "valid": False,
-                "errors": ["Could not determine file type or open file"],
-                "warnings": []
-            }
 
 def print_summary(results: list):
     """Print a summary of validation results."""
@@ -264,10 +276,9 @@ def print_summary(results: list):
 
 def main():
     # Parse command line arguments
-    parser = argparse.ArgumentParser(description='Validate .nc datasets for specific filter-basin combinations')
+    parser = argparse.ArgumentParser(description='Validate WRAP outputs for specific filter-basin combinations')
     parser.add_argument('--filter', help='Filter name to process (e.g., basic, cooler, hotter)')
     parser.add_argument('--basin', help='Basin name to process (e.g., Colorado, Trinity, Brazos)')
-    parser.add_argument('--all', action='store_true', help='Validate all datasets in outputs directory')
     args = parser.parse_args()
     
     # Load basin configuration from JSON
@@ -280,64 +291,42 @@ def main():
 
     results = []
     
-    if args.all:
-        # Validate all datasets in outputs directory
-        print("Validating all datasets in outputs directory...")
-        outputs_dir = Path("outputs")
-        if outputs_dir.exists():
-            nc_files = list(outputs_dir.rglob("*.nc"))
-            print(f"Found {len(nc_files)} .nc files")
-            
-            for file_path in nc_files:
-                result = validate_dataset(file_path)
-                results.append(result)
-        else:
-            print("Outputs directory not found")
+    # Filter processing based on arguments
+    if args.filter:
+        filter_sets = [fs for fs in ENSEMBLE_CONFIG if fs["name"] == args.filter]
+        if not filter_sets:
+            print(f"Error: Filter '{args.filter}' not found in configuration")
             return 1
     else:
-        # Filter processing based on arguments
-        if args.filter:
-            filter_sets = [fs for fs in ENSEMBLE_CONFIG if fs["name"] == args.filter]
-            if not filter_sets:
-                print(f"Error: Filter '{args.filter}' not found in configuration")
-                return 1
-        else:
-            filter_sets = ENSEMBLE_CONFIG
-        
-        if args.basin:
-            if args.basin not in BASINS:
-                print(f"Error: Basin '{args.basin}' not found in configuration")
-                return 1
-            basins = {args.basin: BASINS[args.basin]}
-        else:
-            basins = BASINS
+        filter_sets = ENSEMBLE_CONFIG
+    
+    if args.basin:
+        if args.basin not in BASINS:
+            print(f"Error: Basin '{args.basin}' not found in configuration")
+            return 1
+        basins = {args.basin: BASINS[args.basin]}
+    else:
+        basins = BASINS
 
-        # Process selected combinations
-        for filter_set in filter_sets:
-            filter_name = filter_set["name"]
-            print(f"Processing filter: {filter_name}")
-            
-            for basin_name, basin in basins.items():
-                print(f"  Validating datasets for basin: {basin_name}")
-                
-                # Validate 9505 master streamflow datasets
-                master_streamflow_dir = outputs_path / "9505" / "reach_subset_combined"
-                if master_streamflow_dir.exists():
-                    for nc_file in master_streamflow_dir.glob("*.nc"):
-                        result = validate_dataset(nc_file)
-                        results.append(result)
-                
-                # Validate HMM model datasets
-                hmm_model_path = outputs_path / "bayesian_hmm" / f"{filter_name}" / f"{basin_name.lower()}" / f"{basin_name}_{filter_name}_model.nc"
-                if hmm_model_path.exists():
-                    result = validate_dataset(hmm_model_path)
-                    results.append(result)
-                
-                # Validate synthetic streamflow datasets
-                synthetic_streamflow_path = outputs_path / "bayesian_hmm" / f"{filter_name}" / f"{basin_name.lower()}" / f"{filter_name}_{basin_name.lower()}_synthetic_streamflow.nc"
-                if synthetic_streamflow_path.exists():
-                    result = validate_dataset(synthetic_streamflow_path)
-                    results.append(result)
+    # Process selected combinations
+    for filter_set in filter_sets:
+        filter_name = filter_set["name"]
+        print(f"Processing filter: {filter_name}")
+        
+        for basin_name, basin in basins.items():
+            print(f"  Validating dataset for basin: {basin_name}")
+            dataset_path = build_synthetic_dataset_path(filter_name, basin_name)
+            if not dataset_path.exists():
+                results.append({
+                    "file_path": str(dataset_path),
+                    "file_type": "synthetic_dataset",
+                    "valid": False,
+                    "errors": ["Synthetic streamflow NetCDF file not found"],
+                    "warnings": []
+                })
+            else:
+                result = validate_synthetic_dataset(dataset_path)
+                results.append(result)
     
     # Print summary
     print_summary(results)
