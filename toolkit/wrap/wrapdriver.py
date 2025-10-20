@@ -18,13 +18,14 @@ class WRAPDriver:
             shutil.copyfile(flo_file, join(execution_folder, f"{base_name}.FLO"))
         
         # execute wrap
-        commandline = f"(echo {base_name} && echo {base_name}) | taskset -c 0-63 wine64 {self.wrap_exe_path}"
+        commandline = f"(echo {base_name} && echo {base_name}) | wine64 {self.wrap_exe_path}"
+        # commandline = f"(echo {base_name} && echo {base_name}) | taskset -c 0-63 wine64 {self.wrap_exe_path}"
         cmdmsg = subprocess.run(
             commandline, 
             cwd=execution_folder, 
-            shell=True, 
-            stdout=subprocess.DEVNULL, 
-            stderr=subprocess.DEVNULL)
+            shell=True,)
+            # stdout=subprocess.DEVNULL, 
+            # stderr=subprocess.DEVNULL)
         # Print periodic status updates
         now = datetime.now()
 
