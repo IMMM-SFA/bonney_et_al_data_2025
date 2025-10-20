@@ -19,7 +19,7 @@ from toolkit.data.io import save_netcdf_format, load_netcdf_format
 ### Settings ###
 FORCE_RECOMPUTE = False # Whether to recompute the synthetic streamflow if it already exists
 LOG_TRANSFORM = True # Whether to log transform the data
-N_ENSEMBLES = 1000 # Number of ensembles to generate
+N_ENSEMBLES = 1 # Number of ensembles to generate
 
 ### Path Configuration ###
 basins_path = repo_data_path / "configs" / "basins.json"
@@ -65,7 +65,7 @@ def generate_synthetic_streamflow(basin_name, basin, ensemble_filters, filter_na
     model = BayesianStreamflowHMM.load(str(model_path))
 
     # Generate synthetic streamflow
-    synthetic_h5_path = output_dir / f"{filter_name}" /f"{basin_name.lower()}" / f"{filter_name}_{basin_name.lower()}_synthetic_streamflow.nc"
+    synthetic_h5_path = output_dir / f"{filter_name}" /f"{basin_name.lower()}" / f"{filter_name}_{basin_name.lower()}_synthetic_dataset.nc"
 
     if os.path.exists(synthetic_h5_path) and not FORCE_RECOMPUTE:
         synthetic_streamflow_dict = load_netcdf_format(synthetic_h5_path)

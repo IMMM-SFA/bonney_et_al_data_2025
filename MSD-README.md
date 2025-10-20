@@ -339,7 +339,7 @@ time,RES001,RES002,RES003,RES004,RES005,...
 import xarray as xr
 
 # Load the dataset
-ds = xr.open_dataset('colorado_synthetic_streamflow.nc')
+ds = xr.open_dataset('colorado_synthetic_dataset.nc')
 
 # Access streamflow data
 streamflow = ds['streamflow']  # [ensemble, time, site]

@@ -8,7 +8,7 @@ The data is provided in two formats. The first is a fully annotated NetCDF file.
 
 The main data file is a NetCDF file containing synthetic streamflow and shortage data:
 
-### File: `{basin_name}_synthetic_streamflow.nc`
+### File: `{basin_name}_synthetic_dataset.nc`
 
 #### Dimensions
 - **`ensemble`**: Integer identifier for individual ensemble members
@@ -181,7 +181,7 @@ emission_std_1,400.2
 import xarray as xr
 
 # Load the dataset
-ds = xr.open_dataset('colorado_synthetic_streamflow.nc')
+ds = xr.open_dataset('colorado_synthetic_dataset.nc')
 
 # Access streamflow data
 streamflow = ds['streamflow']  # [ensemble, time, site]
