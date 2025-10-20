@@ -548,8 +548,8 @@ class BayesianStreamflowHMM:
            
         # Draw a single sample from the posterior distribution
         # Select both chain and draw randomly to get a single parameter set
-        random_chain = np.random.choice(self.idata.posterior.dims['chain'])
-        random_draw = np.random.choice(self.idata.posterior.dims['draw'])
+        random_chain = np.random.choice(self.idata.posterior.sizes['chain'])
+        random_draw = np.random.choice(self.idata.posterior.sizes['draw'])
         posterior_sample = self.idata.posterior.sel(chain=random_chain, draw=random_draw)
         
         # Extract parameters from the posterior sample and ensure correct dimensions
@@ -796,8 +796,8 @@ class BayesianStreamflowHMM:
         # For each ensemble member, sample HMM parameters and generate synthetic data
         for ens in range(n_ensembles):
             # Randomly select a posterior sample (chain, draw)
-            chains = self.idata.posterior.dims['chain']
-            draws = self.idata.posterior.dims['draw']
+            chains = self.idata.posterior.sizes['chain']
+            draws = self.idata.posterior.sizes['draw']
             random_chain = np.random.choice(chains)
             random_draw = np.random.choice(draws)
             posterior_sample = self.idata.posterior.sel(chain=random_chain, draw=random_draw)
