@@ -24,7 +24,7 @@ num_processes = 4  # Use at most 2 processes or half your CPU cores
 
 ### Path Configuration ###
 WRAP_EXEC_PATH = Path(repo_data_path) / "WRAP" / "wrap_execution_directories"
-WRAP_SIM_PATH = WRAP_EXEC_PATH / "SIM.exe"
+WRAP_SIM_PATH = WRAP_EXEC_PATH / ".." / "SIM.exe"
 
 metadata_path = repo_data_path / "configs" / "wrap_variable_metadata.json"
 basins_path = repo_data_path / "configs" / "basins.json"
@@ -83,7 +83,7 @@ def main():
             flo_file = Path(repo_data_path) / basin["flo_file"]
             dat_file = flo_file.with_suffix(".DAT")
             base_name = flo_file.stem
-            synthetic_data_path = outputs_path / "bayesian_hmm" / f"{filter_name}" /f"{basin_name.lower()}" / f"{filter_name}_{basin_name.lower()}_synthetic_streamflow.nc"
+            synthetic_data_path = outputs_path / "bayesian_hmm" / f"{filter_name}" /f"{basin_name.lower()}" / f"{filter_name}_{basin_name.lower()}_synthetic_dataset.nc"
             synthetic_flo_output_path = outputs_path / "wrap_results" / basin_name / "synthetic_flos"
             diversions_csvs_path = outputs_path / "wrap_results" / basin_name / "diversions"
             reservoirs_csvs_path = outputs_path / "wrap_results" / basin_name / "reservoirs"
