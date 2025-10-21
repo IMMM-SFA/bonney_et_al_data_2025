@@ -252,7 +252,6 @@ def main():
         BASINS = json.load(f)
 
     # Load ensemble filters configuration
-    ensemble_filters_path = repo_data_path / "configs" / "ensemble_filters_basic.json"
     with open(ensemble_filters_path, "r") as f:
         ENSEMBLE_CONFIG = json.load(f)
 
