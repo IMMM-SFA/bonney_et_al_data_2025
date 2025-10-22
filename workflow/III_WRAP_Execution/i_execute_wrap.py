@@ -20,7 +20,7 @@ from toolkit.wrap.wraputils import wrap_pipeline, process_ensemble_member
 ### Settings ###
 # Use a conservative number of processes to avoid system freeze
 # WRAP simulations are resource-intensive
-num_processes = 16  # Use at most 2 processes or half your CPU cores
+num_processes = 4  # Use at most 2 processes or half your CPU cores
 
 ### Path Configuration ###
 WRAP_EXEC_PATH = Path(repo_data_path) / "WRAP" / "wrap_execution_directories"

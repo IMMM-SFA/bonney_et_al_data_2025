@@ -74,14 +74,13 @@ def process_diversions_and_reservoirs(synthetic_data_path, diversions_csvs_path,
                 dims=['right_id'],
                 attrs={
                     'long_name': 'Water Right Identifier',
-                    'description': 'Index of water right identifiers',
-                    'standard_name': 'right_id',
+                    'description': 'Index of water right identifiers used by WRAP.',
                 }
             )
         
         # Store coordinate information for later use
-        ensemble_coords = ds['ensemble']
-        time_coords = ds['time']
+        realization_coords = ds['realization']
+        time_step_coords = ds['time_step']
     
     # Process each diversion variable type
     for variable_name, file_list in diversions_file_groups.items():
@@ -113,28 +112,27 @@ def process_diversions_and_reservoirs(synthetic_data_path, diversions_csvs_path,
                 'long_name': variable_name.replace('_', ' ').title(),
                 'units': 'unknown',
                 'description': f'Diversion {variable_name.replace("_", " ")} data from WRAP model simulation',
-                'standard_name': f'diversion_{variable_name}'
+                'standard_name': variable_name
             }
         
         # Create variable data array
         variable_da = xr.DataArray(
             variable_data,
-            dims=['ensemble', 'time', 'right_id'],
+            dims=['realization', 'time_step', 'right_id'],
             coords={
-                'ensemble': ensemble_coords,
-                'time': time_coords,
+                'realization': realization_coords,
+                'time_step': time_step_coords,
                 'right_id': right_id_coord
             },
             attrs={
                 'long_name': metadata['long_name'],
                 'units': metadata['units'],
                 'description': metadata['description'],
-                'standard_name': metadata['standard_name']
             }
         )
         
         # Create a new dataset with just this variable
-        new_ds = xr.Dataset({f'diversion_{variable_name}': variable_da})
+        new_ds = xr.Dataset({variable_name: variable_da})
         
         # Append to existing NetCDF file using xarray's append functionality
         new_ds.to_netcdf(synthetic_data_path, mode='a')
@@ -172,15 +170,14 @@ def process_diversions_and_reservoirs(synthetic_data_path, diversions_csvs_path,
                 example_df.columns,
                 dims=['reservoir_id'],
                 attrs={
-                    'long_name': 'Reservoir Identifier',
-                    'description': 'Index of reservoir identifiers',
-                    'standard_name': 'reservoir_id',
+                    'long_name': 'Reservoir identifier',
+                    'description': 'Index of reservoir identifiers used by WRAP.',
                 }
             )
         
         # Store coordinate information for later use
-        ensemble_coords = ds['ensemble']
-        time_coords = ds['time']
+        realization_coords = ds['realization']
+        time_step_coords = ds['time_step']
     
     # Process each reservoir variable type
     for variable_name, file_list in reservoirs_file_groups.items():
@@ -211,28 +208,27 @@ def process_diversions_and_reservoirs(synthetic_data_path, diversions_csvs_path,
                 'long_name': variable_name.replace('_', ' ').title(),
                 'units': 'unknown',
                 'description': f'Reservoir {variable_name.replace("_", " ")} data from WRAP model simulation',
-                'standard_name': f'reservoir_{variable_name}'
+                'standard_name': variable_name
             }
         
         # Create variable data array
         variable_da = xr.DataArray(
             variable_data,
-            dims=['ensemble', 'time', 'reservoir_id'],
+            dims=['realization', 'time_step', 'reservoir_id'],
             coords={
-                'ensemble': ensemble_coords,
-                'time': time_coords,
+                'realization': realization_coords,
+                'time_step': time_step_coords,
                 'reservoir_id': reservoir_id_coord
             },
             attrs={
                 'long_name': metadata['long_name'],
                 'units': metadata['units'],
                 'description': metadata['description'],
-                'standard_name': metadata['standard_name']
             }
         )
         
         # Create a new dataset with just this variable
-        new_ds = xr.Dataset({f'reservoir_{variable_name}': variable_da})
+        new_ds = xr.Dataset({variable_name: variable_da})
         
         # Append to existing NetCDF file using xarray's append functionality
         new_ds.to_netcdf(synthetic_data_path, mode='a')
@@ -289,8 +285,8 @@ def main():
             
             # Initialize paths
             synthetic_data_path = outputs_path / "bayesian_hmm" / f"{filter_name}" /f"{basin_name.lower()}" / f"{filter_name}_{basin_name.lower()}_synthetic_dataset.nc"
-            diversions_csvs_path = outputs_path / "wrap_results" / basin_name / "diversions"
-            reservoirs_csvs_path = outputs_path / "wrap_results" / basin_name / "reservoirs"
+            diversions_csvs_path = outputs_path / "wrap_results" / filter_name / basin_name / "diversions"
+            reservoirs_csvs_path = outputs_path / "wrap_results" / filter_name / basin_name / "reservoirs"
             
             # Process diversions and reservoirs
             process_diversions_and_reservoirs(synthetic_data_path, diversions_csvs_path, reservoirs_csvs_path)

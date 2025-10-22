@@ -66,90 +66,90 @@ def convert_to_netcdf_format(data_dictionary: Dict[str, Any],
     # Extract data from input dictionary
     streamflow_data = data_dictionary['streamflow']
     annual_states_data = data_dictionary['annual_states']
-    ensemble_meta = data_dictionary['ensemble_meta']
-    ensemble_meta_labels = data_dictionary['ensemble_meta_labels']
+    realization_meta = data_dictionary['realization_meta']
+    realization_meta_labels = data_dictionary['realization_meta_labels']
     streamflow_index = data_dictionary['streamflow_index']
     streamflow_columns = data_dictionary['streamflow_columns']
     annual_states_index = data_dictionary['annual_states_index']
     
     # Get dimensions
-    n_ensembles, n_months, n_sites = streamflow_data.shape
+    n_realizations, n_months, n_sites = streamflow_data.shape
     n_years = annual_states_data.shape[1]
-
-
     
     # Convert to lists
     time_index = list(streamflow_index)
     site_names = list(streamflow_columns)
     year_index = list(annual_states_index)
     
+    start_year = int(time_index[0].split('-')[0])
+    end_year = int(time_index[-1].split('-')[0])
+    
+    # Get basin name and filter name from additional metadata
+    basin_name = additional_metadata['basin_name']
+    subset_name = additional_metadata['subset_name']
+    
     # Create NetCDF-compatible format
     netcdf_dict = {
         # Data variables
-        'streamflow': {
+        'synthetic_streamflow': {
             'data': streamflow_data,
-            'dims': ['ensemble', 'time', 'site'],
+            'dims': ['realization', 'time', 'site'],
             'attrs': {
-                'long_name': 'Synthetic streamflow',
                 'units': 'acre-feet',
                 'description': 'Monthly synthetic streamflow generated from Bayesian HMM',
-                'standard_name': 'streamflow',
-                'coordinates': 'ensemble time site'
             }
         },
-        'annual_states': {
+        'annual_wet_dry_state': {
             'data': annual_states_data,
-            'dims': ['ensemble', 'year'],
+            'dims': ['realization', 'year'],
             'attrs': {
-                'long_name': 'Annual hidden states',
-                'description': 'HMM hidden states for each year and ensemble member. 0 is dry, 1 is wet.',
-                'standard_name': 'hidden_state',
+                'description': 'HMM hidden states generated for each year and realization. 0 is dry, 1 is wet.',
                 'valid_range': [0, 1]
             }
         },
         
         # HMM parameters as data variables
         'hmm_parameters': {
-            'data': ensemble_meta,
-            'dims': ['ensemble', 'parameter'],
+            'data': realization_meta,
+            'dims': ['realization', 'parameter'],
             'attrs': {
                 'long_name': 'HMM model parameters',
-                'description': 'Hidden Markov Model parameters for each ensemble member',
+                'description': 'Hidden Markov Model parameters for each realization',
             }
         },
         
         # Coordinate variables
-        'ensemble': {
-            'data': np.arange(n_ensembles),
+        'realization': {
+            'data': np.arange(n_realizations),
             'attrs': {
-                'long_name': 'Ensemble member index',
-                'description': 'Index of ensemble member',
+                'long_name': 'Realization index',
+                'description': 'Index for each synthetic realization',
                 'units': 'integer ordering'
             }
         },
-        'time': {
+        'time_step': {
             'data': pd.to_datetime(time_index),
             'attrs': {
-                'long_name': 'Time',
+                'long_name': 'Time step',
                 'description': 'Monthly time steps (YYYY-MM-DD)'
             }
         },
-        'site': {
+        'gage_id': {
             'data': np.array(site_names, dtype='U'),
             'attrs': {
                 'long_name': 'Gage site names',
-                'description': 'Names of streamflow gage sites'
+                'description': 'Names of streamflow gages used by WRAP'
             }
         },
         'year': {
             'data': np.array(year_index, dtype='U'),
             'attrs': {
                 'long_name': 'Year',
-                'description': 'Year labels for annual state',
+                'description': 'Year labels for annual_wet_dry_state',
             }
         },
-        'parameter': {
-            'data': np.array(ensemble_meta_labels),
+        'hmm_parameter_name': {
+            'data': np.array(realization_meta_labels),
             'attrs': {
                 'long_name': 'Parameter labels',
                 'description': 'Labels of HMM parameters',
@@ -158,14 +158,16 @@ def convert_to_netcdf_format(data_dictionary: Dict[str, Any],
         
         # Global attributes
         'global_attrs': {
-            'title': 'Synthetic Streamflow Ensemble',
+            'title': f'Synthetic Streamflow Realizations for {basin_name} generated using {subset_name} subset',
             'source': 'Bayesian Hidden Markov Model',
             'creation_date': pd.Timestamp.now().isoformat(),
-            'n_ensembles': n_ensembles,
+            'n_realizations': n_realizations,
             'n_months': n_months,
-            'n_sites': n_sites,
+            'n_gages': n_sites,
             'n_years': n_years,
-            'n_parameters': len(ensemble_meta_labels),
+            'start_year': start_year,
+            'end_year': end_year,
+            'n_hmm_parameters': len(realization_meta_labels),
             'temporal_resolution': 'monthly',
             'spatial_resolution': 'streamflow gage sites',
             'generation_method': 'HMM with historical disaggregation',
@@ -250,24 +252,24 @@ def load_netcdf_format(filepath: str) -> dict:
     """
     with xr.open_dataset(filepath) as ds:
         # Extract data variables
-        streamflow_out = ds['streamflow'].values
-        annual_states = ds['annual_states'].values
+        streamflow_out = ds['synthetic_streamflow'].values
+        annual_states = ds['annual_wet_dry_state'].values
         hmm_params = ds['hmm_parameters'].values
 
         # Extract coordinates (decode to str for consistency with input dict)
-        time_index = ds['time'].values.astype('datetime64[M]').astype(str).tolist()
-        site_names = ds['site'].values.astype(str).tolist()
+        time_index = ds['time_step'].values.astype('datetime64[M]').astype(str).tolist()
+        site_names = ds['gage_id'].values.astype(str).tolist()
         year_index = ds['year'].values.astype(str).tolist()
-        hmm_param_labels = ds['parameter'].attrs.get('parameter_names', [])
+        hmm_param_labels = ds['hmm_parameter_name'].values.astype(str).tolist()
         if isinstance(hmm_param_labels, np.ndarray):
             hmm_param_labels = hmm_param_labels.tolist()
 
         # Rebuild dictionary in the same structure as input
         data_dictionary = {
             'streamflow': streamflow_out,
-            'annual_states': annual_states,  # already (ensemble, year)
-            'ensemble_meta': hmm_params,
-            'ensemble_meta_labels': np.array(hmm_param_labels, dtype='U'),
+            'annual_states': annual_states,  # already (realization, year)
+            'realization_meta': hmm_params,
+            'realization_meta_labels': np.array(hmm_param_labels, dtype='U'),
             'streamflow_index': np.array(time_index, dtype='U'),
             'streamflow_columns': np.array(site_names, dtype='U'),
             'annual_states_index': np.array(year_index, dtype='U')

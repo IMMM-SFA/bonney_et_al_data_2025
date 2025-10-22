@@ -850,8 +850,8 @@ class BayesianStreamflowHMM:
         data_dictionary = {
             'streamflow': streamflow_out,
             'annual_states': annual_states.T,  # Transpose to (ensemble, year) for consistency
-            'ensemble_meta': hmm_params,
-            'ensemble_meta_labels': hmm_param_labels,
+            'realization_meta': hmm_params,
+            'realization_meta_labels': hmm_param_labels,
             'streamflow_index': time_index_str,
             'streamflow_columns': site_names,
             'annual_states_index': year_index

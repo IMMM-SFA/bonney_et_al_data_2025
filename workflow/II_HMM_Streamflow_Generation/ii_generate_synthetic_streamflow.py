@@ -17,14 +17,14 @@ from toolkit.data.io import save_netcdf_format, load_netcdf_format
 
 
 ### Settings ###
-FORCE_RECOMPUTE = False # Whether to recompute the synthetic streamflow if it already exists
+FORCE_RECOMPUTE = True # Whether to recompute the synthetic streamflow if it already exists
 LOG_TRANSFORM = True # Whether to log transform the data
 N_ENSEMBLES = 1 # Number of ensembles to generate
 
 ### Path Configuration ###
 basins_path = repo_data_path / "configs" / "basins.json"
-ensemble_filters_path = repo_data_path / "configs" / "ensemble_filters_basic.json"
-# ensemble_filters_path = repo_data_path / "configs" / "ensemble_filters.json"
+# ensemble_filters_path = repo_data_path / "configs" / "ensemble_filters_basic.json"
+ensemble_filters_path = repo_data_path / "configs" / "ensemble_filters.json"
 
 output_dir = outputs_path / "bayesian_hmm"
 
@@ -87,9 +87,9 @@ def generate_synthetic_streamflow(basin_name, basin, ensemble_filters, filter_na
         
         global_metadata = {
             'basin_name': basin_name,
-            'gage_name': gage_name,
-            'reach_id': reach_id,
-            'filter_name': filter_name,
+            'wrap_outflow_gage': gage_name,
+            '9505_reach_id': reach_id,
+            'subset_name': filter_name,
             'ensemble_filters': str(netcdf_filters)  # Convert to string for NetCDF compatibility
         }
         save_netcdf_format(synthetic_streamflow_dict, synthetic_h5_path, additional_metadata=global_metadata)
