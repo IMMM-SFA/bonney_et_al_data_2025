@@ -31,8 +31,6 @@ nc_file_path = outputs_path / "9505" / "reach_subset_combined" / f"master_stream
 
 def train_basin_hmm(basin_name, basin, ensemble_filters, filter_name, generate_diagnostics=True):
     """Train HMM for a single basin with a specific set of ensemble filters."""
-    if basin_name == "Rio Grande":
-        return
     
     gage_name = basin["gage_name"]
     reach_id = basin["reach_id"]
