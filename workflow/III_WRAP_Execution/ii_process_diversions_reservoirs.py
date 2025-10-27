@@ -15,7 +15,9 @@ from toolkit import repo_data_path, outputs_path
 
 
 ### Settings ###
-
+# Use a conservative number of processes to avoid system freeze
+# Processing CSV files and NetCDF operations are resource-intensive
+num_processes = 4  # Use at most 4 processes or half your CPU cores
 
 ### Path Configuration ###
 WRAP_EXEC_PATH = Path(repo_data_path) / "WRAP" / "wrap_execution_directories"
@@ -27,6 +29,34 @@ basins_path = repo_data_path / "configs" / "basins.json"
 ensemble_filters_path = repo_data_path / "configs" / "ensemble_filters.json"
 
 ### Functions ###
+def process_filter_basin_combination(args):
+    """
+    Worker function to process a single filter-basin combination.
+    
+    Parameters
+    ----------
+    args : tuple
+        Contains (filter_name, basin_name, basin)
+    
+    Returns
+    -------
+    str
+        Success message
+    """
+    filter_name, basin_name, basin = args
+    
+    print(f"  Processing basin: {basin_name} with filter: {filter_name}")
+    
+    # Initialize paths
+    synthetic_data_path = outputs_path / "bayesian_hmm" / f"{filter_name}" /f"{basin_name.lower()}" / f"{filter_name}_{basin_name.lower()}_synthetic_dataset.nc"
+    diversions_csvs_path = outputs_path / "wrap_results" / filter_name / basin_name / "diversions"
+    reservoirs_csvs_path = outputs_path / "wrap_results" / filter_name / basin_name / "reservoirs"
+    
+    # Process diversions and reservoirs
+    process_diversions_and_reservoirs(synthetic_data_path, diversions_csvs_path, reservoirs_csvs_path)
+    
+    return f"Successfully processed {filter_name} - {basin_name}"
+
 def process_diversions_and_reservoirs(synthetic_data_path, diversions_csvs_path, reservoirs_csvs_path):
     """
     Process diversions and reservoirs CSV files and append them to the synthetic data NetCDF file.
@@ -273,23 +303,22 @@ def main():
     else:
         basins = BASINS
 
-    # Process selected combinations
+    # Collect all filter-basin combinations
+    all_combinations = []
     for filter_set in filter_sets:
         filter_name = filter_set["name"]
-        print(f"Processing filter: {filter_name}")
-        
         for basin_name, basin in basins.items():
-            gage_name = basin["gage_name"]
-            
-            print(f"  Processing basin: {basin_name} with filter: {filter_name}")
-            
-            # Initialize paths
-            synthetic_data_path = outputs_path / "bayesian_hmm" / f"{filter_name}" /f"{basin_name.lower()}" / f"{filter_name}_{basin_name.lower()}_synthetic_dataset.nc"
-            diversions_csvs_path = outputs_path / "wrap_results" / filter_name / basin_name / "diversions"
-            reservoirs_csvs_path = outputs_path / "wrap_results" / filter_name / basin_name / "reservoirs"
-            
-            # Process diversions and reservoirs
-            process_diversions_and_reservoirs(synthetic_data_path, diversions_csvs_path, reservoirs_csvs_path)
+            args = (filter_name, basin_name, basin)
+            all_combinations.append(args)
+    
+    print(f"Processing {len(all_combinations)} filter-basin combinations...")
+    
+    # Process all combinations in parallel
+    with multiprocessing.Pool(processes=num_processes) as pool:
+        results = pool.map(process_filter_basin_combination, all_combinations)
+    
+    for result in results:
+        print(result)
 
 if __name__ == "__main__":
     main()
