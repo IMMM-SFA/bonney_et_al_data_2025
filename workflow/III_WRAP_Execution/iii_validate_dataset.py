@@ -23,7 +23,7 @@ from toolkit import repo_data_path, outputs_path
 
 ### Path Configuration ###
 basins_path = repo_data_path / "configs" / "basins.json"
-ensemble_filters_path = repo_data_path / "configs" / "ensemble_filters_basic.json"
+ensemble_filters_path = repo_data_path / "configs" / "ensemble_filters.json"
 hmm_metadata_path = repo_data_path / "configs" / "hmm_synthetic_data_metadata.json"
 wrap_metadata_path = repo_data_path / "configs" / "wrap_variable_metadata.json"
 
@@ -51,12 +51,12 @@ def get_expected_variables(hmm_metadata, wrap_metadata):
     # WRAP diversion variables
     if "diversion" in wrap_metadata:
         for var_name, metadata in wrap_metadata["diversion"].items():
-            expected_vars[f"diversion_{var_name}"] = metadata
+            expected_vars[var_name] = {"metadata": metadata, "type": "diversion"}
     
     # WRAP reservoir variables
     if "reservoir" in wrap_metadata:
         for var_name, metadata in wrap_metadata["reservoir"].items():
-            expected_vars[f"reservoir_{var_name}"] = metadata
+            expected_vars[var_name] = {"metadata": metadata, "type": "reservoir"}
     
     return expected_vars
 
@@ -101,9 +101,11 @@ def validate_synthetic_dataset(file_path: Path, hmm_metadata: dict, wrap_metadat
         if coord_name not in ds.dims and coord_name not in ds.coords:
             # Some coordinates might be optional depending on data presence
             if coord_name in ["right_id", "reservoir_id"]:
-                # These are only required if corresponding data variables exist
-                has_diversion_data = any(var.startswith("diversion_") for var in ds.data_vars)
-                has_reservoir_data = any(var.startswith("reservoir_") for var in ds.data_vars)
+                # Check if there are any diversion or reservoir variables in the dataset
+                has_diversion_data = any(isinstance(v, dict) and v.get("type") == "diversion" for v in expected_vars.values() 
+                                        if v in [expected_vars.get(var) for var in ds.data_vars])
+                has_reservoir_data = any(isinstance(v, dict) and v.get("type") == "reservoir" for v in expected_vars.values()
+                                        if v in [expected_vars.get(var) for var in ds.data_vars])
                 
                 if coord_name == "right_id" and has_diversion_data:
                     results["errors"].append(f"Missing required coordinate: {coord_name} (needed for diversion data)")
@@ -119,12 +121,14 @@ def validate_synthetic_dataset(file_path: Path, hmm_metadata: dict, wrap_metadat
                 # Core coordinates should always be present
                 results["warnings"].append(f"Missing coordinate: {coord_name}")
     
-    # Check required data variables from HMM metadata
-    for var_name, var_metadata in expected_vars.items():
-        if var_name.startswith("diversion_") or var_name.startswith("reservoir_"):
+    # Check required data variables from metadata
+    for var_name, var_info in expected_vars.items():
+        # Handle WRAP variables (which have metadata and type)
+        if isinstance(var_info, dict) and "type" in var_info:
+            var_type = var_info["type"]
             # WRAP variables - check if they exist
             if var_name not in ds.data_vars:
-                results["errors"].append(f"Missing required data variable: {var_name}")
+                results["errors"].append(f"Missing required {var_type} variable: {var_name}")
                 results["valid"] = False
         else:
             # HMM variables - these are always required
@@ -146,10 +150,15 @@ def validate_synthetic_dataset(file_path: Path, hmm_metadata: dict, wrap_metadat
         # Check if this variable should have metadata
         var_metadata = None
         
-        # Check HMM variables
+        # Check if it's in expected vars
         if var_name in expected_vars:
-            var_metadata = expected_vars[var_name]
-        # Check alternate names
+            var_info = expected_vars[var_name]
+            # Extract metadata from WRAP variables (which have nested structure)
+            if isinstance(var_info, dict) and "metadata" in var_info:
+                var_metadata = var_info["metadata"]
+            else:
+                var_metadata = var_info
+        # Check alternate names for HMM variables
         elif var_name == "streamflow" and "synthetic_streamflow" in expected_vars:
             var_metadata = expected_vars["synthetic_streamflow"]
         elif var_name == "annual_states" and "annual_wet_dry_state" in expected_vars:
@@ -193,8 +202,10 @@ def validate_synthetic_dataset(file_path: Path, hmm_metadata: dict, wrap_metadat
                 results["warnings"].append(f"Coordinate {coord_name} missing long_name attribute")
     
     # Count variable types for reporting
-    diversion_vars = [var for var in ds.data_vars if var.startswith('diversion_')]
-    reservoir_vars = [var for var in ds.data_vars if var.startswith('reservoir_')]
+    diversion_vars = [var for var, info in expected_vars.items() 
+                     if isinstance(info, dict) and info.get("type") == "diversion" and var in ds.data_vars]
+    reservoir_vars = [var for var, info in expected_vars.items() 
+                     if isinstance(info, dict) and info.get("type") == "reservoir" and var in ds.data_vars]
     
     if diversion_vars:
         print(f"    Found {len(diversion_vars)} diversion variables")
