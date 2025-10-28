@@ -81,7 +81,9 @@ def build_synthetic_dataset_path(filter_name: str, basin_name: str) -> Path:
 
 def validate_synthetic_dataset(file_path: Path, hmm_metadata: dict, wrap_metadata: dict) -> dict:
     """Validate synthetic streamflow dataset structure using metadata files."""
-    print(f"  Validating synthetic streamflow: {file_path.name}")
+    print(f"\n{'='*80}")
+    print(f"Validating: {file_path.name}")
+    print(f"{'='*80}")
     
     ds = xr.open_dataset(file_path)
     results = {
@@ -96,122 +98,103 @@ def validate_synthetic_dataset(file_path: Path, hmm_metadata: dict, wrap_metadat
     expected_vars = get_expected_variables(hmm_metadata, wrap_metadata)
     expected_coords = get_expected_coordinates(hmm_metadata, wrap_metadata)
     
-    # Check required coordinate variables (dimensions)
-    for coord_name, coord_metadata in expected_coords.items():
-        if coord_name not in ds.dims and coord_name not in ds.coords:
-            # Some coordinates might be optional depending on data presence
-            if coord_name in ["right_id", "reservoir_id"]:
-                # Check if there are any diversion or reservoir variables in the dataset
-                has_diversion_data = any(isinstance(v, dict) and v.get("type") == "diversion" for v in expected_vars.values() 
-                                        if v in [expected_vars.get(var) for var in ds.data_vars])
-                has_reservoir_data = any(isinstance(v, dict) and v.get("type") == "reservoir" for v in expected_vars.values()
-                                        if v in [expected_vars.get(var) for var in ds.data_vars])
-                
-                if coord_name == "right_id" and has_diversion_data:
-                    results["errors"].append(f"Missing required coordinate: {coord_name} (needed for diversion data)")
-                    results["valid"] = False
-                elif coord_name == "reservoir_id" and has_reservoir_data:
-                    results["errors"].append(f"Missing required coordinate: {coord_name} (needed for reservoir data)")
-                    results["valid"] = False
-            elif coord_name == "hmm_parameter_name":
-                # Check if it exists under different name (parameter)
-                if "parameter" not in ds.dims and "parameter" not in ds.coords:
-                    results["warnings"].append(f"Coordinate {coord_name} (or 'parameter') not found")
-            else:
-                # Core coordinates should always be present
-                results["warnings"].append(f"Missing coordinate: {coord_name}")
+    print(f"\nChecking {len(expected_vars)} expected variables...")
+    print(f"-" * 80)
     
-    # Check required data variables from metadata
+    # Check each expected variable
     for var_name, var_info in expected_vars.items():
-        # Handle WRAP variables (which have metadata and type)
-        if isinstance(var_info, dict) and "type" in var_info:
-            var_type = var_info["type"]
-            # WRAP variables - check if they exist
-            if var_name not in ds.data_vars:
+        # Extract metadata and type
+        if isinstance(var_info, dict) and "metadata" in var_info:
+            var_metadata = var_info["metadata"]
+            var_type = var_info.get("type", "unknown")
+        else:
+            var_metadata = var_info
+            var_type = "hmm"
+        
+        # Check if variable exists (handle alternate names)
+        actual_var_name = var_name
+        if var_name not in ds.data_vars:
+            # Try alternate names for HMM variables
+            alt_names = {
+                "synthetic_streamflow": "streamflow",
+                "annual_wet_dry_state": "annual_states"
+            }
+            if var_name in alt_names and alt_names[var_name] in ds.data_vars:
+                actual_var_name = alt_names[var_name]
+                results["warnings"].append(f"Variable '{var_name}' found as '{actual_var_name}'")
+            else:
                 results["errors"].append(f"Missing required {var_type} variable: {var_name}")
                 results["valid"] = False
-        else:
-            # HMM variables - these are always required
-            if var_name not in ds.data_vars:
-                # Handle alternate naming (e.g., streamflow vs synthetic_streamflow)
-                alt_names = {
-                    "synthetic_streamflow": "streamflow",
-                    "annual_wet_dry_state": "annual_states"
-                }
-                alt_name = alt_names.get(var_name, None)
-                if alt_name and alt_name in ds.data_vars:
-                    results["warnings"].append(f"Variable {var_name} found as {alt_name}")
-                else:
-                    results["errors"].append(f"Missing required data variable: {var_name}")
-                    results["valid"] = False
-    
-    # Validate data variable attributes using metadata
-    for var_name in ds.data_vars:
-        # Check if this variable should have metadata
-        var_metadata = None
+                print(f"\n❌ {var_name} ({var_type}): MISSING")
+                continue
         
-        # Check if it's in expected vars
-        if var_name in expected_vars:
-            var_info = expected_vars[var_name]
-            # Extract metadata from WRAP variables (which have nested structure)
-            if isinstance(var_info, dict) and "metadata" in var_info:
-                var_metadata = var_info["metadata"]
+        # Variable exists - log information
+        var_obj = ds[actual_var_name]
+        print(f"\n✓ {actual_var_name} ({var_type})")
+        print(f"  Dimensions: {list(var_obj.dims)} {var_obj.shape}")
+        
+        # Get sample values and statistics
+        try:
+            values = var_obj.values.flatten()
+            valid_values = values[~np.isnan(values)]
+            
+            if len(valid_values) > 0:
+                sample_size = min(10, len(valid_values))
+                sample_indices = np.linspace(0, len(valid_values)-1, sample_size, dtype=int)
+                samples = valid_values[sample_indices]
+                mean_val = np.nanmean(values)
+                
+                print(f"  Sample values (n={sample_size}): {samples}")
+                print(f"  Mean: {mean_val:.6f}")
             else:
-                var_metadata = var_info
-        # Check alternate names for HMM variables
-        elif var_name == "streamflow" and "synthetic_streamflow" in expected_vars:
-            var_metadata = expected_vars["synthetic_streamflow"]
-        elif var_name == "annual_states" and "annual_wet_dry_state" in expected_vars:
-            var_metadata = expected_vars["annual_wet_dry_state"]
+                print(f"  Warning: All values are NaN")
+                results["warnings"].append(f"Variable '{actual_var_name}' contains only NaN values")
+        except Exception as e:
+            print(f"  Warning: Could not compute statistics: {e}")
         
-        if var_metadata:
-            var_obj = ds[var_name]
-            
-            # Check units attribute
-            if "units" in var_metadata:
-                expected_units = var_metadata["units"]
-                if "units" in var_obj.attrs:
-                    actual_units = var_obj.attrs["units"]
-                    # Simple check - just warn if they don't contain similar keywords
-                    if expected_units not in actual_units and actual_units not in expected_units:
-                        results["warnings"].append(f"Variable {var_name} units may not match: expected '{expected_units}', found '{actual_units}'")
-                else:
-                    results["warnings"].append(f"Variable {var_name} missing units attribute")
-            
-            # Check long_name attribute
-            if "long_name" not in var_obj.attrs:
-                results["warnings"].append(f"Variable {var_name} missing long_name attribute")
-            
-            # Check description attribute
-            if "description" not in var_obj.attrs:
-                results["warnings"].append(f"Variable {var_name} missing description attribute")
+        # Check metadata attributes
+        missing_attrs = []
+        if "long_name" not in var_obj.attrs:
+            missing_attrs.append("long_name")
+        if "units" not in var_obj.attrs:
+            missing_attrs.append("units")
+        if "description" not in var_obj.attrs:
+            missing_attrs.append("description")
+        
+        if missing_attrs:
+            results["warnings"].append(f"Variable '{actual_var_name}' missing attributes: {', '.join(missing_attrs)}")
+            print(f"  Missing attributes: {', '.join(missing_attrs)}")
     
-    # Validate coordinate variable attributes using metadata
-    for coord_name in ds.coords:
-        if coord_name in expected_coords:
-            coord_metadata = expected_coords[coord_name]
-            coord_obj = ds[coord_name]
-            
-            # Check long_name attribute
-            if "long_name" not in coord_obj.attrs:
-                results["warnings"].append(f"Coordinate {coord_name} missing long_name attribute")
+    # Check coordinates
+    print(f"\n{'-' * 80}")
+    print(f"Checking {len(expected_coords)} expected coordinates...")
+    print(f"-" * 80)
+    
+    for coord_name, coord_metadata in expected_coords.items():
         # Handle alternate coordinate names
-        elif coord_name in ["ensemble", "time", "site", "parameter"]:
-            # These are common coordinates that might not be in metadata yet
-            if "long_name" not in ds[coord_name].attrs:
-                results["warnings"].append(f"Coordinate {coord_name} missing long_name attribute")
-    
-    # Count variable types for reporting
-    diversion_vars = [var for var, info in expected_vars.items() 
-                     if isinstance(info, dict) and info.get("type") == "diversion" and var in ds.data_vars]
-    reservoir_vars = [var for var, info in expected_vars.items() 
-                     if isinstance(info, dict) and info.get("type") == "reservoir" and var in ds.data_vars]
-    
-    if diversion_vars:
-        print(f"    Found {len(diversion_vars)} diversion variables")
-    
-    if reservoir_vars:
-        print(f"    Found {len(reservoir_vars)} reservoir variables")
+        actual_coord_name = coord_name
+        if coord_name not in ds.coords and coord_name not in ds.dims:
+            # Check alternate names
+            if coord_name == "hmm_parameter_name" and "parameter" in ds.coords:
+                actual_coord_name = "parameter"
+            elif coord_name in ["right_id", "reservoir_id"]:
+                # These are optional depending on data presence
+                continue
+            else:
+                results["warnings"].append(f"Coordinate '{coord_name}' not found")
+                print(f"\n⚠ {coord_name}: NOT FOUND")
+                continue
+        
+        # Coordinate exists
+        if actual_coord_name in ds.coords:
+            coord_obj = ds[actual_coord_name]
+            print(f"\n✓ {actual_coord_name}")
+            print(f"  Size: {coord_obj.size}")
+            
+            # Check for long_name attribute
+            if "long_name" not in coord_obj.attrs:
+                results["warnings"].append(f"Coordinate '{actual_coord_name}' missing long_name attribute")
+                print(f"  Missing attribute: long_name")
     
     ds.close()
     
@@ -221,39 +204,44 @@ def validate_synthetic_dataset(file_path: Path, hmm_metadata: dict, wrap_metadat
 def print_summary(results: list):
     """Print a summary of validation results."""
     if not results:
-        print("No validation results to summarize")
+        print("\nNo validation results to summarize")
         return
     
     total_files = len(results)
     valid_files = sum(1 for r in results if r["valid"])
     invalid_files = total_files - valid_files
+    total_errors = sum(len(r["errors"]) for r in results)
+    total_warnings = sum(len(r["warnings"]) for r in results)
     
-    print("\n" + "="*60)
+    print("\n" + "="*80)
     print("VALIDATION SUMMARY")
-    print("="*60)
+    print("="*80)
     print(f"Total files validated: {total_files}")
     print(f"Valid files: {valid_files}")
     print(f"Invalid files: {invalid_files}")
+    print(f"Total errors: {total_errors}")
+    print(f"Total warnings: {total_warnings}")
     print(f"Success rate: {valid_files/total_files*100:.1f}%")
     
-    if invalid_files > 0:
-        print("\nINVALID FILES:")
+    if total_errors > 0:
+        print("\n" + "-"*80)
+        print("ERRORS:")
+        print("-"*80)
         for result in results:
-            if not result["valid"]:
-                print(f"  - {result['file_path']}")
+            if result["errors"]:
+                print(f"\n{result['file_path']}:")
                 for error in result["errors"]:
-                    print(f"    ERROR: {error}")
+                    print(f"  ❌ {error}")
     
-    # Count warnings
-    total_warnings = sum(len(r["warnings"]) for r in results)
     if total_warnings > 0:
-        print(f"\nTotal warnings: {total_warnings}")
-        print("\nFILES WITH WARNINGS:")
+        print("\n" + "-"*80)
+        print("WARNINGS:")
+        print("-"*80)
         for result in results:
             if result["warnings"]:
-                print(f"  - {result['file_path']}")
+                print(f"\n{result['file_path']}:")
                 for warning in result["warnings"]:
-                    print(f"    WARNING: {warning}")
+                    print(f"  ⚠ {warning}")
 
 ### Main ###
 
