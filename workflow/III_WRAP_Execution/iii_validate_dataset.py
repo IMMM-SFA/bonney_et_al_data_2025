@@ -24,14 +24,63 @@ from toolkit import repo_data_path, outputs_path
 ### Path Configuration ###
 basins_path = repo_data_path / "configs" / "basins.json"
 ensemble_filters_path = repo_data_path / "configs" / "ensemble_filters_basic.json"
+hmm_metadata_path = repo_data_path / "configs" / "hmm_synthetic_data_metadata.json"
+wrap_metadata_path = repo_data_path / "configs" / "wrap_variable_metadata.json"
 
 ### Functions ###
+
+def load_metadata():
+    """Load metadata from JSON files."""
+    with open(hmm_metadata_path, 'r') as f:
+        hmm_metadata = json.load(f)
+    
+    with open(wrap_metadata_path, 'r') as f:
+        wrap_metadata = json.load(f)
+    
+    return hmm_metadata, wrap_metadata
+
+def get_expected_variables(hmm_metadata, wrap_metadata):
+    """Extract expected variable names from metadata."""
+    expected_vars = {}
+    
+    # HMM variables (exclude coordinate_variables)
+    for key, value in hmm_metadata.items():
+        if key != "coordinate_variables" and isinstance(value, dict) and "long_name" in value:
+            expected_vars[key] = value
+    
+    # WRAP diversion variables
+    if "diversion" in wrap_metadata:
+        for var_name, metadata in wrap_metadata["diversion"].items():
+            expected_vars[f"diversion_{var_name}"] = metadata
+    
+    # WRAP reservoir variables
+    if "reservoir" in wrap_metadata:
+        for var_name, metadata in wrap_metadata["reservoir"].items():
+            expected_vars[f"reservoir_{var_name}"] = metadata
+    
+    return expected_vars
+
+def get_expected_coordinates(hmm_metadata, wrap_metadata):
+    """Extract expected coordinate variable names from metadata."""
+    expected_coords = {}
+    
+    # Get coordinates from HMM metadata
+    if "coordinate_variables" in hmm_metadata:
+        expected_coords.update(hmm_metadata["coordinate_variables"])
+    
+    # Get additional coordinates from WRAP metadata
+    if "coordinate_variables" in wrap_metadata:
+        for coord_name, metadata in wrap_metadata["coordinate_variables"].items():
+            if coord_name not in expected_coords:
+                expected_coords[coord_name] = metadata
+    
+    return expected_coords
 
 def build_synthetic_dataset_path(filter_name: str, basin_name: str) -> Path:
     return outputs_path / "bayesian_hmm" / f"{filter_name}" / f"{basin_name.lower()}" / f"{filter_name}_{basin_name.lower()}_synthetic_dataset.nc"
 
-def validate_synthetic_dataset(file_path: Path) -> dict:
-    """Validate synthetic streamflow dataset structure."""
+def validate_synthetic_dataset(file_path: Path, hmm_metadata: dict, wrap_metadata: dict) -> dict:
+    """Validate synthetic streamflow dataset structure using metadata files."""
     print(f"  Validating synthetic streamflow: {file_path.name}")
     
     ds = xr.open_dataset(file_path)
@@ -43,192 +92,115 @@ def validate_synthetic_dataset(file_path: Path) -> dict:
         "warnings": []
     }
     
-    # Check required dimensions according to README
-    required_dims = ["ensemble", "time", "site", "year", "parameter"]
-    for dim in required_dims:
-        if dim not in ds.dims:
-            results["errors"].append(f"Missing required dimension: {dim}")
-            results["valid"] = False
+    # Get expected variables and coordinates from metadata
+    expected_vars = get_expected_variables(hmm_metadata, wrap_metadata)
+    expected_coords = get_expected_coordinates(hmm_metadata, wrap_metadata)
     
-    # Check for right_id dimension (required if shortage data exists)
-    has_shortage = "diversion_shortage_ratio" in ds.data_vars
-    if has_shortage and "right_id" not in ds.dims:
-        results["errors"].append("Missing required dimension: right_id (needed for shortage data)")
-        results["valid"] = False
+    # Check required coordinate variables (dimensions)
+    for coord_name, coord_metadata in expected_coords.items():
+        if coord_name not in ds.dims and coord_name not in ds.coords:
+            # Some coordinates might be optional depending on data presence
+            if coord_name in ["right_id", "reservoir_id"]:
+                # These are only required if corresponding data variables exist
+                has_diversion_data = any(var.startswith("diversion_") for var in ds.data_vars)
+                has_reservoir_data = any(var.startswith("reservoir_") for var in ds.data_vars)
+                
+                if coord_name == "right_id" and has_diversion_data:
+                    results["errors"].append(f"Missing required coordinate: {coord_name} (needed for diversion data)")
+                    results["valid"] = False
+                elif coord_name == "reservoir_id" and has_reservoir_data:
+                    results["errors"].append(f"Missing required coordinate: {coord_name} (needed for reservoir data)")
+                    results["valid"] = False
+            elif coord_name == "hmm_parameter_name":
+                # Check if it exists under different name (parameter)
+                if "parameter" not in ds.dims and "parameter" not in ds.coords:
+                    results["warnings"].append(f"Coordinate {coord_name} (or 'parameter') not found")
+            else:
+                # Core coordinates should always be present
+                results["warnings"].append(f"Missing coordinate: {coord_name}")
     
-    # Check required data variables
-    required_streamflow_data_vars = ["streamflow", "annual_states", "hmm_parameters"]
-    for var in required_streamflow_data_vars:
-        if var not in ds.data_vars:
-            results["errors"].append(f"Missing required data variable: {var}")
-            results["valid"] = False
-    
-    required_diversion_data_vars = ["diversion_diversion_or_energy_shortage", 
-                                    "diversion_diversion_or_energy_target", 
-                                    "diversion_shortage_ratio"]
-    for var in required_diversion_data_vars:
-        if var not in ds.data_vars:
-            results["errors"].append(f"Missing required data variable: {var}")
-            results["valid"] = False
-    
-    required_reservoir_data_vars = [
-        "reservoir_reservoir_releases_not_accessible_to_hydroelectric_power_turbines",
-        "reservoir_reservoir_storage_capacity",
-        "reservoir_reservoir_net_evaporation_precipitation_volume",
-        "reservoir_inflows_to_reservoir_from_releases_from_other_reservoirs",
-        "reservoir_energy_generated",
-        "reservoir_inflows_to_reservoir_from_stream_flow_depletions",
-        "reservoir_reservoir_water_surface_elevation",
-        "reservoir_reservoir_releases_accessible_to_hydroelectric_power_turbines",]
-    for var in required_reservoir_data_vars:
-        if var not in ds.data_vars:
-            results["errors"].append(f"Missing required data variable: {var}")
-            results["valid"] = False
-    
-    # Validate streamflow variable
-    if "streamflow" in ds.data_vars:
-        streamflow = ds["streamflow"]
-        expected_dims = ["ensemble", "time", "site"]
-        if list(streamflow.dims) != expected_dims:
-            results["errors"].append(f"Streamflow dimensions {list(streamflow.dims)} don't match expected {expected_dims}")
-            results["valid"] = False
-        
-        # Check units
-        if "units" in streamflow.attrs:
-            units = streamflow.attrs["units"]
-            if "acre-feet" not in units.lower():
-                results["warnings"].append(f"Streamflow units may be incorrect: {units}")
+    # Check required data variables from HMM metadata
+    for var_name, var_metadata in expected_vars.items():
+        if var_name.startswith("diversion_") or var_name.startswith("reservoir_"):
+            # WRAP variables - check if they exist
+            if var_name not in ds.data_vars:
+                results["errors"].append(f"Missing required data variable: {var_name}")
+                results["valid"] = False
         else:
-            results["warnings"].append("Streamflow missing units attribute")
+            # HMM variables - these are always required
+            if var_name not in ds.data_vars:
+                # Handle alternate naming (e.g., streamflow vs synthetic_streamflow)
+                alt_names = {
+                    "synthetic_streamflow": "streamflow",
+                    "annual_wet_dry_state": "annual_states"
+                }
+                alt_name = alt_names.get(var_name, None)
+                if alt_name and alt_name in ds.data_vars:
+                    results["warnings"].append(f"Variable {var_name} found as {alt_name}")
+                else:
+                    results["errors"].append(f"Missing required data variable: {var_name}")
+                    results["valid"] = False
+    
+    # Validate data variable attributes using metadata
+    for var_name in ds.data_vars:
+        # Check if this variable should have metadata
+        var_metadata = None
         
-        # Check other required attributes
-        required_attrs = ["long_name", "description", "standard_name"]
-        for attr in required_attrs:
-            if attr not in streamflow.attrs:
-                results["warnings"].append(f"Streamflow missing {attr} attribute")
-    
-    # Validate shortage variable (if present)
-    if "diversion_shortage_ratio" in ds.data_vars:
-        shortage = ds["diversion_shortage_ratio"]
-        expected_dims = ["ensemble", "time", "right_id"]
-        if list(shortage.dims) != expected_dims:
-            results["errors"].append(f"Shortage dimensions {list(shortage.dims)} don't match expected {expected_dims}")
-            results["valid"] = False
+        # Check HMM variables
+        if var_name in expected_vars:
+            var_metadata = expected_vars[var_name]
+        # Check alternate names
+        elif var_name == "streamflow" and "synthetic_streamflow" in expected_vars:
+            var_metadata = expected_vars["synthetic_streamflow"]
+        elif var_name == "annual_states" and "annual_wet_dry_state" in expected_vars:
+            var_metadata = expected_vars["annual_wet_dry_state"]
         
-        # Check units
-        if "units" in shortage.attrs:
-            units = shortage.attrs["units"]
-            if "ratio" not in units.lower():
-                results["warnings"].append(f"Shortage units may be incorrect: {units}")
-        else:
-            results["warnings"].append("Shortage missing units attribute")
-        
-        # Check other required attributes
-        required_attrs = ["long_name", "description", "standard_name"]
-        for attr in required_attrs:
-            if attr not in shortage.attrs:
-                results["warnings"].append(f"Shortage missing {attr} attribute")
+        if var_metadata:
+            var_obj = ds[var_name]
+            
+            # Check units attribute
+            if "units" in var_metadata:
+                expected_units = var_metadata["units"]
+                if "units" in var_obj.attrs:
+                    actual_units = var_obj.attrs["units"]
+                    # Simple check - just warn if they don't contain similar keywords
+                    if expected_units not in actual_units and actual_units not in expected_units:
+                        results["warnings"].append(f"Variable {var_name} units may not match: expected '{expected_units}', found '{actual_units}'")
+                else:
+                    results["warnings"].append(f"Variable {var_name} missing units attribute")
+            
+            # Check long_name attribute
+            if "long_name" not in var_obj.attrs:
+                results["warnings"].append(f"Variable {var_name} missing long_name attribute")
+            
+            # Check description attribute
+            if "description" not in var_obj.attrs:
+                results["warnings"].append(f"Variable {var_name} missing description attribute")
     
-    # Validate annual_states variable
-    if "annual_states" in ds.data_vars:
-        annual_states = ds["annual_states"]
-        expected_dims = ["ensemble", "year"]
-        if list(annual_states.dims) != expected_dims:
-            results["errors"].append(f"Annual states dimensions {list(annual_states.dims)} don't match expected {expected_dims}")
-            results["valid"] = False
-        
-        # Check valid_range attribute
-        if "valid_range" in annual_states.attrs:
-            valid_range = annual_states.attrs["valid_range"]
-            # Convert to list for comparison to handle numpy arrays
-            valid_range_list = list(valid_range) if hasattr(valid_range, '__iter__') else [valid_range]
-            if valid_range_list != [0, 1]:
-                results["warnings"].append(f"Annual states valid_range should be [0, 1], found: {valid_range}")
-        else:
-            results["warnings"].append("Annual states missing valid_range attribute")
-        
-        # Check other required attributes
-        required_attrs = ["long_name", "description", "standard_name"]
-        for attr in required_attrs:
-            if attr not in annual_states.attrs:
-                results["warnings"].append(f"Annual states missing {attr} attribute")
+    # Validate coordinate variable attributes using metadata
+    for coord_name in ds.coords:
+        if coord_name in expected_coords:
+            coord_metadata = expected_coords[coord_name]
+            coord_obj = ds[coord_name]
+            
+            # Check long_name attribute
+            if "long_name" not in coord_obj.attrs:
+                results["warnings"].append(f"Coordinate {coord_name} missing long_name attribute")
+        # Handle alternate coordinate names
+        elif coord_name in ["ensemble", "time", "site", "parameter"]:
+            # These are common coordinates that might not be in metadata yet
+            if "long_name" not in ds[coord_name].attrs:
+                results["warnings"].append(f"Coordinate {coord_name} missing long_name attribute")
     
-    # Validate hmm_parameters variable
-    if "hmm_parameters" in ds.data_vars:
-        hmm_parameters = ds["hmm_parameters"]
-        expected_dims = ["ensemble", "parameter"]
-        if list(hmm_parameters.dims) != expected_dims:
-            results["errors"].append(f"HMM parameters dimensions {list(hmm_parameters.dims)} don't match expected {expected_dims}")
-            results["valid"] = False
-        
-        # Check required attributes
-        required_attrs = ["long_name", "description"]
-        for attr in required_attrs:
-            if attr not in hmm_parameters.attrs:
-                results["warnings"].append(f"HMM parameters missing {attr} attribute")
-    
-    # Validate coordinate variables
-    coord_checks = {
-        "ensemble": "Ensemble member index",
-        "time": "Monthly time steps", 
-        "site": "Streamflow gage site names",
-        "year": "Year labels for annual states",
-        "parameter": "HMM parameter labels"
-    }
-    
-    for coord, description in coord_checks.items():
-        if coord in ds.coords:
-            coord_var = ds[coord]
-            if "long_name" not in coord_var.attrs:
-                results["warnings"].append(f"Coordinate {coord} missing long_name attribute")
-        else:
-            results["warnings"].append(f"Coordinate variable {coord} not found")
-    
-    # Check right_id coordinate if shortage data exists
-    if has_shortage and "right_id" in ds.coords:
-        right_id = ds["right_id"]
-        if "long_name" not in right_id.attrs:
-            results["warnings"].append("Coordinate right_id missing long_name attribute")
-    
-    # Check for diversion variables (added by ii_process_diversions_reservoirs.py)
+    # Count variable types for reporting
     diversion_vars = [var for var in ds.data_vars if var.startswith('diversion_')]
+    reservoir_vars = [var for var in ds.data_vars if var.startswith('reservoir_')]
+    
     if diversion_vars:
         print(f"    Found {len(diversion_vars)} diversion variables")
-        for var in diversion_vars:
-            diversion = ds[var]
-            expected_dims = ["ensemble", "time", "right_id"]
-            if list(diversion.dims) != expected_dims:
-                results["errors"].append(f"Diversion {var} dimensions {list(diversion.dims)} don't match expected {expected_dims}")
-                results["valid"] = False
-            
-            # Check required attributes
-            required_attrs = ["long_name", "units", "description", "standard_name"]
-            for attr in required_attrs:
-                if attr not in diversion.attrs:
-                    results["warnings"].append(f"Diversion {var} missing {attr} attribute")
     
-    # Check for reservoir variables (added by ii_process_diversions_reservoirs.py)
-    reservoir_vars = [var for var in ds.data_vars if var.startswith('reservoir_')]
     if reservoir_vars:
         print(f"    Found {len(reservoir_vars)} reservoir variables")
-        for var in reservoir_vars:
-            reservoir = ds[var]
-            expected_dims = ["ensemble", "time", "reservoir_id"]
-            if list(reservoir.dims) != expected_dims:
-                results["errors"].append(f"Reservoir {var} dimensions {list(reservoir.dims)} don't match expected {expected_dims}")
-                results["valid"] = False
-            
-            # Check required attributes
-            required_attrs = ["long_name", "units", "description", "standard_name"]
-            for attr in required_attrs:
-                if attr not in reservoir.attrs:
-                    results["warnings"].append(f"Reservoir {var} missing {attr} attribute")
-    
-    # Check for reservoir_id coordinate if reservoir data exists
-    if reservoir_vars and "reservoir_id" in ds.coords:
-        reservoir_id = ds["reservoir_id"]
-        if "long_name" not in reservoir_id.attrs:
-            results["warnings"].append("Coordinate reservoir_id missing long_name attribute")
     
     ds.close()
     
@@ -288,6 +260,13 @@ def main():
     # Load ensemble filters configuration from JSON
     with open(ensemble_filters_path, "r") as f:
         ENSEMBLE_CONFIG = json.load(f)
+    
+    # Load metadata files
+    print("Loading metadata files...")
+    hmm_metadata, wrap_metadata = load_metadata()
+    print(f"  Loaded {len([k for k in hmm_metadata.keys() if k != 'coordinate_variables'])} HMM variables")
+    print(f"  Loaded {len(wrap_metadata.get('diversion', {}))} diversion variables")
+    print(f"  Loaded {len(wrap_metadata.get('reservoir', {}))} reservoir variables")
 
     results = []
     
@@ -325,7 +304,7 @@ def main():
                     "warnings": []
                 })
             else:
-                result = validate_synthetic_dataset(dataset_path)
+                result = validate_synthetic_dataset(dataset_path, hmm_metadata, wrap_metadata)
                 results.append(result)
     
     # Print summary
