@@ -19,7 +19,8 @@ import argparse
 from toolkit import repo_data_path, outputs_path
 
 ### Settings ###
-# None
+# Set to False if WRAP execution steps have not been run
+INCLUDE_WRAP_VARIABLES = False
 
 ### Path Configuration ###
 basins_path = repo_data_path / "configs" / "basins.json"
@@ -34,8 +35,10 @@ def load_metadata():
     with open(hmm_metadata_path, 'r') as f:
         hmm_metadata = json.load(f)
     
-    with open(wrap_metadata_path, 'r') as f:
-        wrap_metadata = json.load(f)
+    wrap_metadata = {}
+    if INCLUDE_WRAP_VARIABLES:
+        with open(wrap_metadata_path, 'r') as f:
+            wrap_metadata = json.load(f)
     
     return hmm_metadata, wrap_metadata
 
@@ -48,15 +51,17 @@ def get_expected_variables(hmm_metadata, wrap_metadata):
         if key != "coordinate_variables" and isinstance(value, dict) and "long_name" in value:
             expected_vars[key] = value
     
-    # WRAP diversion variables
-    if "diversion" in wrap_metadata:
-        for var_name, metadata in wrap_metadata["diversion"].items():
-            expected_vars[var_name] = {"metadata": metadata, "type": "diversion"}
-    
-    # WRAP reservoir variables
-    if "reservoir" in wrap_metadata:
-        for var_name, metadata in wrap_metadata["reservoir"].items():
-            expected_vars[var_name] = {"metadata": metadata, "type": "reservoir"}
+    # WRAP variables (only if enabled)
+    if INCLUDE_WRAP_VARIABLES:
+        # WRAP diversion variables
+        if "diversion" in wrap_metadata:
+            for var_name, metadata in wrap_metadata["diversion"].items():
+                expected_vars[var_name] = {"metadata": metadata, "type": "diversion"}
+        
+        # WRAP reservoir variables
+        if "reservoir" in wrap_metadata:
+            for var_name, metadata in wrap_metadata["reservoir"].items():
+                expected_vars[var_name] = {"metadata": metadata, "type": "reservoir"}
     
     return expected_vars
 
@@ -68,8 +73,8 @@ def get_expected_coordinates(hmm_metadata, wrap_metadata):
     if "coordinate_variables" in hmm_metadata:
         expected_coords.update(hmm_metadata["coordinate_variables"])
     
-    # Get additional coordinates from WRAP metadata
-    if "coordinate_variables" in wrap_metadata:
+    # Get additional coordinates from WRAP metadata (only if enabled)
+    if INCLUDE_WRAP_VARIABLES and "coordinate_variables" in wrap_metadata:
         for coord_name, metadata in wrap_metadata["coordinate_variables"].items():
             if coord_name not in expected_coords:
                 expected_coords[coord_name] = metadata
@@ -264,8 +269,11 @@ def main():
     print("Loading metadata files...")
     hmm_metadata, wrap_metadata = load_metadata()
     print(f"  Loaded {len([k for k in hmm_metadata.keys() if k != 'coordinate_variables'])} HMM variables")
-    print(f"  Loaded {len(wrap_metadata.get('diversion', {}))} diversion variables")
-    print(f"  Loaded {len(wrap_metadata.get('reservoir', {}))} reservoir variables")
+    if INCLUDE_WRAP_VARIABLES:
+        print(f"  Loaded {len(wrap_metadata.get('diversion', {}))} diversion variables")
+        print(f"  Loaded {len(wrap_metadata.get('reservoir', {}))} reservoir variables")
+    else:
+        print(f"  WRAP variables validation disabled (INCLUDE_WRAP_VARIABLES = False)")
 
     results = []
     
