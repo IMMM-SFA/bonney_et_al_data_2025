@@ -57,6 +57,8 @@ def generate_synthetic_streamflow(basin_name, basin, ensemble_filters, filter_na
     
     # Historical monthly for disaggregation
     hist_monthly = flo_to_df(str(flo_file))
+    
+    outflow_index = hist_monthly.columns.tolist().index(gage_name)
 
     # Set random seeds for reproducible generation
     set_random_seeds("hmm_generation")
@@ -78,7 +80,8 @@ def generate_synthetic_streamflow(basin_name, basin, ensemble_filters, filter_na
             site_names=hist_monthly.columns.tolist(),
             time_index=hist_monthly.index.tolist(),
             h5_path=synthetic_h5_path,
-            n_ensembles=N_ENSEMBLES
+            n_ensembles=N_ENSEMBLES,
+            outflow_index=outflow_index
         )
         
         # Save synthetic streamflow to netcdf

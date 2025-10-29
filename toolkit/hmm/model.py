@@ -647,6 +647,7 @@ class BayesianStreamflowHMM:
         self,
         annual_streamflow: np.ndarray,
         historical_monthly_data: np.ndarray,
+        outflow_index: int,
         random_seed: Optional[int] = None
     ) -> pd.DataFrame:
         """
@@ -658,6 +659,8 @@ class BayesianStreamflowHMM:
             Annual streamflow values to disaggregate
         historical_monthly_data : np.ndarray
             Historical monthly streamflow data with shape (n_years, 12, n_sites)
+        outflow_index : int
+            Index of the outflow control point site to use for distance calculation
         random_seed : Optional[int], default=None
             Random seed for reproducibility
            
@@ -675,27 +678,32 @@ class BayesianStreamflowHMM:
         hist_monthly_sf = historical_monthly_data.reshape(hist_years, 12, -1)
         num_sites = hist_monthly_sf.shape[2]
        
-        # Compute annual sums for historical data
-        hist_annual_sf = np.sum(hist_monthly_sf, axis=1)
+        # Extract outflow control point data
+        outflow_hist_monthly_sf = hist_monthly_sf[:, :, outflow_index]
+        outflow_hist_annual_sf = np.sum(outflow_hist_monthly_sf, axis=1)
        
-        # Compute distances between synthetic and historical annual flows
+        # Compute distances between synthetic and historical annual flows using outflow node
         annual_distances = np.abs(
-            np.subtract.outer(annual_streamflow, hist_annual_sf[:, 0])
+            np.subtract.outer(annual_streamflow, outflow_hist_annual_sf)
         )
        
         # Initialize synthetic monthly data
         synth_monthly_sf = np.zeros((num_years, 12, num_sites))
        
-        # Compute monthly ratios for historical data
-        monthly_ratios = np.zeros(hist_monthly_sf.shape)
+        # Compute spatial ratios: each site relative to outflow control point
+        Vratios_mh = np.zeros(hist_monthly_sf.shape)
+        for i in range(num_sites):
+            Vratios_mh[:, :, i] = hist_monthly_sf[:, :, i] / outflow_hist_monthly_sf
+       
+        # Compute temporal breakdown: outflow monthly relative to outflow annual
+        outflow_temporal_breakdown = np.zeros((hist_years, 12))
         for i in range(hist_years):
-            # Add small epsilon to prevent division by zero
-            annual_sum = hist_annual_sf[i] + 1e-10
-            monthly_ratios[i] = hist_monthly_sf[i] / annual_sum
+            outflow_temporal_breakdown[i, :] = (
+                outflow_hist_monthly_sf[i, :] / outflow_hist_annual_sf[i]
+            )
        
         # Compute neighbor probabilities (inverse distance weighting)
-        # k = int(np.sqrt(hist_years))
-        k = 20
+        k = int(np.sqrt(hist_years))
         neighbor_probabilities = np.zeros(k)
         for j in range(k):
             neighbor_probabilities[j] = 1 / (j + 1)
@@ -712,12 +720,18 @@ class BayesianStreamflowHMM:
             # Select neighbor based on weighted probabilities
             neighbor_idx = np.random.choice(indices, p=neighbor_probabilities)
            
-            # Use selected neighbor's monthly pattern
-            synth_monthly_sf[j] = monthly_ratios[neighbor_idx] * annual_streamflow[j]
+            # Step 1: Disaggregate outflow from annual to monthly (temporal)
+            synth_monthly_sf[j, :, outflow_index] = (
+                outflow_temporal_breakdown[neighbor_idx, :] * annual_streamflow[j]
+            )
            
-            # Track zero values
-            zeros = (monthly_ratios[neighbor_idx] == 0).sum()
-            total_zeros += zeros
+            # Step 2: Disaggregate across all sites (spatial)
+            for n in range(12):
+                synth_monthly_sf[j, n, :] = (
+                    Vratios_mh[neighbor_idx, n, :] * synth_monthly_sf[j, n, outflow_index]
+                )
+                zeros = (Vratios_mh[neighbor_idx, n, :] == 0).sum()
+                total_zeros += zeros
        
         # Reshape to (num_years * 12, num_sites)
         synth_monthly_sf = synth_monthly_sf.reshape(num_years * 12, num_sites)
@@ -746,19 +760,41 @@ class BayesianStreamflowHMM:
         random_seed: Optional[int] = None,
         h5_path: Optional[str] = None,
         site_names: Optional[list] = None,
-        time_index: Optional[list] = None
+        time_index: Optional[list] = None,
+        outflow_index: int = -1
     ) -> None:
         """
         Generate multiple synthetic streamflow ensemble members and save to HDF5.
         Output axes: (ensemble_num, month_date, gage_site). Metadata for HMM parameters per member.
         
-        Returns:
-        --------
+        Parameters
+        ----------
+        start_year : int
+            Starting year for synthetic data
+        historical_monthly_data : np.ndarray
+            Historical monthly streamflow data
+        n_ensembles : int, default=1000
+            Number of ensemble members to generate
+        drought : Optional[Dict[str, Any]], default=None
+            Drought adjustment configuration
+        random_seed : Optional[int], default=None
+            Random seed for reproducibility
+        h5_path : Optional[str], default=None
+            Path to save HDF5 file
+        site_names : Optional[list], default=None
+            List of site names
+        time_index : Optional[list], default=None
+            Time index for streamflow
+        outflow_index : int, default=-1
+            Index of the outflow control point site for disaggregation
+        
+        Returns
+        -------
         dict: Data dictionary containing:
             - 'streamflow': synthetic streamflow data (ensemble_num, month_date, gage_site)
             - 'annual_states': hidden states for each year (ensemble_num, year)
-            - 'ensemble_meta': HMM parameters for each ensemble member
-            - 'ensemble_meta_labels': parameter labels
+            - 'realization_meta': HMM parameters for each ensemble member
+            - 'realization_meta_labels': parameter labels
             - 'streamflow_index': time index for streamflow
             - 'streamflow_columns': site names
             - 'annual_states_index': year index for states
@@ -826,10 +862,11 @@ class BayesianStreamflowHMM:
                 states[t] = np.random.choice(self.n_states, p=probs)
                 annual_synthetic[t] = np.random.normal(mu[states[t]], sigma[states[t]])
             annual_synthetic = np.expm1(annual_synthetic)
-            # Disaggregate to monthly
+            # Disaggregate to monthly (random_seed=None allows it to use the global random state)
             synth_monthly = self.disaggregate_annual_streamflow(
                 annual_streamflow=annual_synthetic,
                 historical_monthly_data=historical_monthly_data,
+                outflow_index=outflow_index,
                 random_seed=None
             )
             # synth_monthly: (n_months, n_locations)
