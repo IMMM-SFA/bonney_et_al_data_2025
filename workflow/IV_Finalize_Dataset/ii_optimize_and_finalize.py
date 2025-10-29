@@ -18,7 +18,6 @@ from pathlib import Path
 import json
 import argparse
 import shutil
-import zipfile
 
 from toolkit import repo_data_path, outputs_path
 
@@ -31,17 +30,15 @@ USE_SHUFFLE = True     # Reorganize bytes for better compression
 # NetCDF operations can be I/O intensive
 num_processes = 4
 
+# Archive path (set to None to skip archive creation)
+archive_path = outputs_path / "data_archive"
+
 ### Path Configuration ###
 basins_path = repo_data_path / "configs" / "basins.json"
 ensemble_filters_path = repo_data_path / "configs" / "ensemble_filters.json"
 readme_source = Path(__file__).parent.parent / "MSD-README.md"
 
 ### Functions ###
-
-def zip_file(input_path, output_path):
-    """Zip a single file."""
-    with zipfile.ZipFile(output_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
-        zipf.write(input_path, arcname=input_path.name)
 
 def copy_directory(src, dst):
     """Copy directory recursively."""
@@ -102,7 +99,7 @@ def optimize_dtype(da, var_name):
     
     return da, False, original_dtype
 
-def optimize_single_file(input_path):
+def optimize_single_file(input_path, output_path):
     """
     Optimize a single NetCDF file with dtype conversion and compression.
     
@@ -110,6 +107,8 @@ def optimize_single_file(input_path):
     ----------
     input_path : Path
         Input NetCDF file path
+    output_path : Path
+        Output NetCDF file path
     
     Returns
     -------
@@ -117,6 +116,7 @@ def optimize_single_file(input_path):
         Results dictionary with statistics
     """
     input_path = Path(input_path)
+    output_path = Path(output_path)
     
     print(f"\nOptimizing: {input_path.name}")
     print("-" * 80)
@@ -193,24 +193,22 @@ def optimize_single_file(input_path):
             encoding[var_name]['chunksizes'] = chunks
     
     # Save optimized file
-    print(f"\nSaving optimized file...")
-    temp_path = input_path.with_suffix('.tmp.nc')
+    print(f"\nSaving optimized file to: {output_path.name}")
+    
+    # Ensure output directory exists
+    output_path.parent.mkdir(parents=True, exist_ok=True)
     
     try:
-        ds.to_netcdf(temp_path, encoding=encoding, format='NETCDF4')
+        ds.to_netcdf(output_path, encoding=encoding, format='NETCDF4')
         ds.close()
         
-        # Verify the temp file was created and is readable
+        # Verify the output file was created and is readable
         print(f"Verifying optimized file...")
-        test_ds = xr.open_dataset(temp_path)
+        test_ds = xr.open_dataset(output_path)
         test_ds.close()
         
-        # Replace original
-        input_path.unlink()
-        temp_path.rename(input_path)
-        
         # Report results
-        optimized_size = get_file_size_mb(input_path)
+        optimized_size = get_file_size_mb(output_path)
         reduction = original_size - optimized_size
         reduction_pct = (reduction / original_size) * 100
         
@@ -220,7 +218,7 @@ def optimize_single_file(input_path):
         print(f"  Reduction:      {reduction:.2f} MB ({reduction_pct:.1f}%)")
         
         return {
-            'file': str(input_path),
+            'file': str(output_path),
             'success': True,
             'original_size': original_size,
             'optimized_size': optimized_size,
@@ -232,12 +230,8 @@ def optimize_single_file(input_path):
     except Exception as e:
         print(f"\n❌ ERROR during optimization: {e}")
         
-        # Clean up failed temp file
-        if temp_path.exists():
-            temp_path.unlink()
-        
         return {
-            'file': str(input_path),
+            'file': str(output_path),
             'success': False,
             'error': str(e)
         }
@@ -258,28 +252,30 @@ def process_filter_basin_combination(args):
     """
     filter_name, basin_name = args
     
-    # Construct NetCDF file path
+    # Construct input NetCDF file path
     nc_filename = f"{filter_name}_{basin_name.lower()}_synthetic_dataset.nc"
-    nc_path = outputs_path / "bayesian_hmm" / filter_name / basin_name.lower() / nc_filename
+    input_path = outputs_path / "bayesian_hmm" / filter_name / basin_name.lower() / nc_filename
     
-    if not nc_path.exists():
+    if not input_path.exists():
         print(f"\nSkipping (not found): {nc_filename}")
         return {
-            'file': str(nc_path),
+            'file': str(input_path),
             'success': False,
             'error': 'File not found'
         }
     
-    return optimize_single_file(nc_path)
+    # Construct output path in archive destination
+    output_path = archive_path / basin_name / nc_filename
+    
+    return optimize_single_file(input_path, output_path)
 
 ### Main ###
 
 def main():
     # Parse command line arguments
-    parser = argparse.ArgumentParser(description='Optimize NetCDF files and optionally prepare data archive')
+    parser = argparse.ArgumentParser(description='Optimize NetCDF files and prepare data archive')
     parser.add_argument('--filter', help='Filter name to process (e.g., All Models, Bias Correction - Daymet)')
     parser.add_argument('--basin', help='Basin name to process (e.g., Colorado, Trinity, Sabine)')
-    parser.add_argument('--archive', help='Output directory for data archive (optimizes files then creates archive)')
     args = parser.parse_args()
     
     # Load basin configuration
@@ -352,83 +348,30 @@ def main():
         print(f"\nFailed files:")
         for r in failed:
             print(f"  ❌ {Path(r['file']).name}: {r.get('error', 'Unknown error')}")
+        raise Exception("Failed to optimize some files")
     
-    # If optimization successful and archive directory specified, prepare archive
-    if args.archive and len(failed) == 0:
-        print("\n" + "="*80)
-        print("PREPARING DATA ARCHIVE")
-        print("="*80)
-        prepare_archive(args.archive, BASINS, ENSEMBLE_CONFIG, filter_sets, basins)
+    # Finalize archive with README and data folder
+    print("\n" + "="*80)
+    print("FINALIZING DATA ARCHIVE")
+    print("="*80)
     
-    return 0 if len(failed) == 0 else 1
-
-def prepare_archive(output_dir, all_basins, all_filters, filter_sets, basins):
-    """
-    Prepare the data archive with optimized NetCDF files.
-    
-    Parameters
-    ----------
-    output_dir : str or Path
-        Output directory for the data archive
-    all_basins : dict
-        All basin configurations
-    all_filters : list
-        All filter configurations
-    filter_sets : list
-        Filtered set of filters to include
-    basins : dict
-        Filtered set of basins to include
-    """
-    output_dir = Path(output_dir)
-    output_dir.mkdir(exist_ok=True, parents=True)
-    
-    print(f"\nPreparing data archive in: {output_dir}")
-    print("-"*80)
-    
-    # Create basin folders and copy optimized NetCDF files
-    print("\nCopying optimized NetCDF files by basin...")
-    
-    for basin_name in basins.keys():
-        print(f"\n  Processing basin: {basin_name}")
-        
-        # Create basin folder
-        basin_folder = output_dir / basin_name
-        basin_folder.mkdir(exist_ok=True)
-        
-        # Process each filter for this basin
-        for filter_set in filter_sets:
-            filter_name = filter_set["name"]
-            
-            # Construct optimized NetCDF file path
-            nc_filename = f"{filter_name}_{basin_name.lower()}_synthetic_dataset.nc"
-            nc_path = outputs_path / "bayesian_hmm" / filter_name / basin_name.lower() / nc_filename
-            
-            if nc_path.exists():
-                # Zip the optimized NetCDF file
-                zip_filename = f"{filter_name}_{basin_name.lower()}_synthetic_dataset.zip"
-                zip_path = basin_folder / zip_filename
-                zip_file(nc_path, zip_path)
-                print(f"    Zipped: {zip_filename}")
-            else:
-                print(f"    Warning: File not found - {nc_filename}")
+    output_dir = Path(archive_path)
     
     # Copy data folder
-    print(f"\n{'-'*80}")
-    print("Copying data folder...")
+    print("\nCopying data folder...")
     data_dest = output_dir / "data"
     copy_directory(repo_data_path, data_dest)
     print(f"  Copied: data/ -> {data_dest.name}/")
     
-    # Copy and rename README
-    print(f"\n{'-'*80}")
-    print("Copying README...")
+    # Copy README
+    print("\nCopying README...")
     readme_dest = output_dir / "README.md"
     shutil.copy(readme_source, readme_dest)
     print(f"  Copied: {readme_source.name} -> {readme_dest.name}")
     
     # Print summary
     print(f"\n{'='*80}")
-    print("ARCHIVE PREPARATION COMPLETE")
+    print("ARCHIVE COMPLETE")
     print("="*80)
     print(f"Output directory: {output_dir}")
     print(f"\nStructure:")
@@ -438,8 +381,10 @@ def prepare_archive(output_dir, all_basins, all_filters, filter_sets, basins):
     for basin_name in basins.keys():
         basin_folder = output_dir / basin_name
         if basin_folder.exists():
-            zip_count = len(list(basin_folder.glob("*.zip")))
-            print(f"    {basin_name}/ ({zip_count} zipped datasets)")
+            nc_count = len(list(basin_folder.glob("*.nc")))
+            print(f"    {basin_name}/ ({nc_count} datasets)")
+    
+    return 0 if len(failed) == 0 else 1
 
 if __name__ == "__main__":
     exit(main())
