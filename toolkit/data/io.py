@@ -93,7 +93,7 @@ def convert_to_netcdf_format(data_dictionary: Dict[str, Any],
         # Data variables
         'synthetic_streamflow': {
             'data': streamflow_data,
-            'dims': ['realization', 'time', 'site'],
+            'dims': ['realization', 'time_step', 'gage_id'],
             'attrs': {
                 'units': 'acre-feet',
                 'description': 'Monthly synthetic streamflow generated from Bayesian HMM',
@@ -111,7 +111,7 @@ def convert_to_netcdf_format(data_dictionary: Dict[str, Any],
         # HMM parameters as data variables
         'hmm_parameters': {
             'data': realization_meta,
-            'dims': ['realization', 'parameter'],
+            'dims': ['realization', 'hmm_parameter_name'],
             'attrs': {
                 'long_name': 'HMM model parameters',
                 'description': 'Hidden Markov Model parameters for each realization',
