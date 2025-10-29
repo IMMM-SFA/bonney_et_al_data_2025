@@ -103,7 +103,13 @@ data/
 
 **`ensemble_filters.json`** define the different subsets of the 9505 ensemble used for training the BHMM models.
 
+**`hmm_synthetic_data_metadata.json** contains the metadata for the variables and coordinates in the NetCDF dataset.
+
 **`reaches_of_interest.csv`** lists the specific river reaches (COMIDs) extracted from the 9505 dataset for each basin.
+
+**`random_seeds.json`** contains random seeds used for reproducibility.
+
+**`reaches_of_interest.csv`** contains the reaches in the 9505 data which are downselected for further analysis.
 
 ### Geospatial Data
 
