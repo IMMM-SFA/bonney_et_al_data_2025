@@ -1,8 +1,6 @@
-# Data Documentation
+# Synthetic Streamflow Datasets Derived from DOE 9505 for Select Texas Basins
 
-This dataset contains synthetically generated streamflow realizations for several river basins in Texas.
-
-The dataset is generated using a Bayesian Hidden Markov Model (BHMM) trained on the [DOE 9505 streamflow projection ensemble](https://hydrosource.ornl.gov/data/datasets/9505v3_1/). A set of 1000 streamflow realizations and corresponding outputs from WRAP are generated for three river basins in texas using seven different subsets of the 9505 ensemble.
+This dataset is generated using a Bayesian Hidden Markov Model (BHMM) trained on the [DOE 9505 streamflow projection ensemble](https://doi.ccs.ornl.gov/dataset/9d3ff396-992d-5bd7-ab02-d21ec6193147). A set of 21,000 streamflow realizations are generated for three river basins in Texas using seven different subsets of the 9505 ensemble.
 
 Basins:
 - Colorado River Basin
@@ -17,14 +15,14 @@ Basins:
 - Downscaling - RegCM (The 24 ensemble members which use RegCM downscaling)
 - Hydro Model - PRMS (The 24 ensemble members which use the PRMS hydrological model)
 - Hydro Model - VIC5 (The 24 ensemble members which use the VIC5 hydrological model)
-- Bias Correction - Dayment (The 24 ensemble members which use Daymet bias correction)
 
 For each pair of basin and subset (21 total), the following is performed:
-1. A an annual BHMM is fit to the outlet streamflow for the basin using the ensembles of the subset.
-2. A set of 1000 streamflow realizations is generated using the fit BHMM.
-3. The streamflow realizations are bundled into a single NetCDF.
+1. An annual BHMM is fit to the outlet gage's streamflow for the basin using the ensembles of the subset.
+2. A set of 1,000 streamflow realizations is generated using the fit BHMM.
+3. Annual streamflow realizations at the outlet gage are disaggregated to monthly time steps across multiple gage locations throughout the basin.
+4. The streamflow realizations are bundled into a single NetCDF.
 
-The core files of this archive are the 21 NetCDF files generated from this process, organized into folder by their basin name (e.g., `Colorado/`. In addition to the core files, there is a `data/` folder which contains the data necessary for reproducing the dataset. The details of these two parts of the archive are provided below
+The core files of this archive are the 21 NetCDF files generated from this process, organized into folder by their basin name (e.g., `Colorado/`. In addition to the core files, there is a `data/` folder which contains auxillary data used to generate the dataset. The details of these two parts of the archive are provided below.
 
 
 ## NetCDF File Structure
@@ -44,7 +42,7 @@ The NetCDF files containing synthetic streamflow outputs:
 
 ##### 1. `synthetic_streamflow`
 - **Description**: Monthly synthetic streamflow generated from Bayesian HMM.
-- **Dimensions**: `[realization, time_step site]`
+- **Dimensions**: `[realization, time_step, site]`
 - **Units**: acre-feet
 
 ##### 2. `annual_wet_dry_state`
@@ -53,7 +51,7 @@ The NetCDF files containing synthetic streamflow outputs:
 - **Values**: 0 (dry state) or 1 (wet state)
 
 ##### 3. `hmm_parameters`
-- **Description**: Hidden Markov Model parameters used to generate each realization
+- **Description**: Hidden Markov Model parameters used to generate each realization. The `hmm_parameter_name` dimension contains the labels of the different parameters of the BHMM model that generated the realization.
 - **Dimensions**: `[realization, hmm_parameter_name]`
 
 #### Coordinate Variables
@@ -93,17 +91,16 @@ data/
 │   ├── reaches_of_interest.csv - Reaches extracted from the 9505 data for downstream use in analysis.
 └── geospatial/
 │   └── 9505_shapefiles/ - Shapefiles related to the DOE 9505 dataset.
-
+└── WRAP/basin_wams/ - Water Availability Models used as a basis for historical streamflow.
 ```
 
 ### Configuration Files
 
-**`basins.json`** contains metadata for the basins with the following attributes:
-- `reach_id`: The name of the reach in the 9505 data which has been associated to the outflow gage.
+**`basins.json`** contains basin metadata used for generating the datset.
 
 **`ensemble_filters.json`** define the different subsets of the 9505 ensemble used for training the BHMM models.
 
-**`hmm_synthetic_data_metadata.json** contains the metadata for the variables and coordinates in the NetCDF dataset.
+**`hmm_synthetic_data_metadata.json`** contains the metadata for the variables and coordinates in the NetCDF dataset.
 
 **`reaches_of_interest.csv`** lists the specific river reaches (COMIDs) extracted from the 9505 dataset for each basin.
 
@@ -113,8 +110,12 @@ data/
 
 ### Geospatial Data
 
-**`9505_shapefiles/`** contains the National Hydrography Dataset (NHD) flowline shapefiles for HUC2 regions 11, 12, and 13, used for associating streamflow reaches with control points. Other data provided by the 9505 datset is also included, but not needed for the reproducibility of this dataset. This data was downloaded from the [hydrosource webpage](https://hydrosource.ornl.gov/data/datasets/9505v3_1/).
+**`9505_shapefiles/`** contains the National Hydrography Dataset (NHD) flowline shapefiles for HUC2 regions 11, 12, and 13, used for associating streamflow reaches with control points. Other data provided by the 9505 datset is also included but not needed for the reproducibility of this dataset. This data was downloaded from the following [hydrosource webpage](https://doi.ccs.ornl.gov/dataset/9d3ff396-992d-5bd7-ab02-d21ec6193147).
 
+
+### Water Availability Models
+
+**`basin_wams/`** contains the Water Availability Model (WAM) files for each basin. These models contain historical streamflows which are used for prior estimation and temporal/spatial disaggreation.
 
 ## Usage Examples
 

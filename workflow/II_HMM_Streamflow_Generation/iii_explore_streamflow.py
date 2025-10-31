@@ -38,19 +38,22 @@ def load_historical_data(basin):
     return hist_monthly
 
 def plot_average_annual_streamflow(synthetic_data, basin_name, filter_name, output_path):
-    """Plot annual streamflow for each gage across years using first realization."""
+    """Plot annual streamflow for each gage across years using 10 random realizations."""
     streamflow = synthetic_data['streamflow']  # (n_realizations, n_months, n_sites)
     time_index = pd.to_datetime(synthetic_data['streamflow_index'])
     site_names = synthetic_data['streamflow_columns']
     
-    # Get first realization
-    first_realization = streamflow[0, :, :]  # (n_months, n_sites)
-    n_months, n_sites = first_realization.shape
-    n_years = n_months // 12
+    # Determine number of realizations to plot
+    n_realizations = streamflow.shape[0]
+    n_to_plot = min(10, n_realizations)
     
-    # Reshape to (n_years, 12, n_sites) and sum over months
-    streamflow_reshaped = first_realization.reshape(n_years, 12, n_sites)
-    annual_streamflow = streamflow_reshaped.sum(axis=1)  # (n_years, n_sites)
+    # Select random realizations
+    realization_indices = np.random.choice(n_realizations, size=n_to_plot, replace=False)
+    
+    # Get dimensions
+    n_months = streamflow.shape[1]
+    n_sites = streamflow.shape[2]
+    n_years = n_months // 12
     
     # Get years from time index
     years = np.arange(int(time_index[0].year), int(time_index[0].year) + n_years)
@@ -58,12 +61,17 @@ def plot_average_annual_streamflow(synthetic_data, basin_name, filter_name, outp
     # Create plot
     fig, ax = plt.subplots(figsize=(12, 6))
     
-    for i, site in enumerate(site_names):
-        ax.plot(years, annual_streamflow[:, i], marker='o', linewidth=2)
+    for real_idx in realization_indices:
+        realization_data = streamflow[real_idx, :, :]  # (n_months, n_sites)
+        streamflow_reshaped = realization_data.reshape(n_years, 12, n_sites)
+        annual_streamflow = streamflow_reshaped.sum(axis=1)  # (n_years, n_sites)
+        
+        for i, site in enumerate(site_names):
+            ax.plot(years, annual_streamflow[:, i], marker='o', linewidth=1.5, alpha=0.6)
     
     ax.set_xlabel('Year', fontsize=12)
     ax.set_ylabel('Annual Streamflow (acre-feet)', fontsize=12)
-    ax.set_title(f'Annual Streamflow - {basin_name} ({filter_name}) - First Realization', fontsize=14, fontweight='bold')
+    ax.set_title(f'Annual Streamflow - {basin_name} ({filter_name}) - {n_to_plot} Random Realizations', fontsize=14, fontweight='bold')
     ax.grid(True, alpha=0.3)
     
     plt.tight_layout()

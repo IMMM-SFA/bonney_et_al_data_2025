@@ -19,7 +19,7 @@ from toolkit.data.io import save_netcdf_format, load_netcdf_format
 ### Settings ###
 FORCE_RECOMPUTE = True # Whether to recompute the synthetic streamflow if it already exists
 LOG_TRANSFORM = True # Whether to log transform the data
-N_ENSEMBLES = 1 # Number of ensembles to generate
+N_ENSEMBLES = 1000 # Number of ensembles to generate
 
 ### Path Configuration ###
 basins_path = repo_data_path / "configs" / "basins.json"
