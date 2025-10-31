@@ -37,41 +37,59 @@ def load_historical_data(basin):
     hist_monthly = flo_to_df(str(flo_file))
     return hist_monthly
 
-def plot_average_annual_streamflow(synthetic_data, basin_name, filter_name, output_path):
-    """Plot annual streamflow for each gage across years using 10 random realizations."""
+def plot_annual_streamflow_with_historical(synthetic_data, hist_monthly, gage_name, basin_name, filter_name, output_path):
+    """Plot annual streamflow for outflow gage: 10 random synthetic realizations plus historical data."""
     streamflow = synthetic_data['streamflow']  # (n_realizations, n_months, n_sites)
     time_index = pd.to_datetime(synthetic_data['streamflow_index'])
     site_names = synthetic_data['streamflow_columns']
+    
+    # Find the outflow gage index
+    gage_index = list(site_names).index(gage_name)
     
     # Determine number of realizations to plot
     n_realizations = streamflow.shape[0]
     n_to_plot = min(10, n_realizations)
     
     # Select random realizations
+    np.random.seed(42)
     realization_indices = np.random.choice(n_realizations, size=n_to_plot, replace=False)
     
     # Get dimensions
     n_months = streamflow.shape[1]
-    n_sites = streamflow.shape[2]
     n_years = n_months // 12
     
-    # Get years from time index
-    years = np.arange(int(time_index[0].year), int(time_index[0].year) + n_years)
+    # Get years from synthetic time index
+    synthetic_years = np.arange(int(time_index[0].year), int(time_index[0].year) + n_years)
+    
+    # Calculate historical annual sums
+    hist_annual = hist_monthly[gage_name].resample('Y').sum()
+    hist_years = hist_annual.index.year
     
     # Create plot
-    fig, ax = plt.subplots(figsize=(12, 6))
+    fig, ax = plt.subplots(figsize=(14, 7))
     
+    # Plot synthetic realizations for outflow gage only
     for real_idx in realization_indices:
-        realization_data = streamflow[real_idx, :, :]  # (n_months, n_sites)
-        streamflow_reshaped = realization_data.reshape(n_years, 12, n_sites)
-        annual_streamflow = streamflow_reshaped.sum(axis=1)  # (n_years, n_sites)
-        
-        for i, site in enumerate(site_names):
-            ax.plot(years, annual_streamflow[:, i], marker='o', linewidth=1.5, alpha=0.6)
+        realization_data = streamflow[real_idx, :, gage_index]  # (n_months,)
+        streamflow_reshaped = realization_data.reshape(n_years, 12)
+        annual_streamflow = streamflow_reshaped.sum(axis=1)  # (n_years,)
+        ax.plot(synthetic_years, annual_streamflow, linewidth=1.5, alpha=0.3, color='blue')
+    
+    # Plot historical data for outflow gage
+    ax.plot(hist_years, hist_annual.values, linewidth=2, alpha=0.8, color='red')
+    
+    # Create custom legend
+    from matplotlib.lines import Line2D
+    legend_elements = [
+        Line2D([0], [0], color='blue', linewidth=1.5, alpha=0.5, label='Synthetic (10 realizations)'),
+        Line2D([0], [0], color='red', linewidth=2, alpha=0.8, label='Historical')
+    ]
+    ax.legend(handles=legend_elements, fontsize=11, loc='best')
     
     ax.set_xlabel('Year', fontsize=12)
     ax.set_ylabel('Annual Streamflow (acre-feet)', fontsize=12)
-    ax.set_title(f'Annual Streamflow - {basin_name} ({filter_name}) - {n_to_plot} Random Realizations', fontsize=14, fontweight='bold')
+    ax.set_title(f'Annual Streamflow at Outflow Gage - {basin_name} ({filter_name})\nGage: {gage_name}', 
+                fontsize=14, fontweight='bold')
     ax.grid(True, alpha=0.3)
     
     plt.tight_layout()
@@ -80,63 +98,18 @@ def plot_average_annual_streamflow(synthetic_data, basin_name, filter_name, outp
     
     print(f"Saved annual streamflow plot to {output_path}")
 
-def plot_outflow_comparison(synthetic_data, hist_monthly, gage_name, basin_name, filter_name, output_path):
-    """Plot historical vs synthetic annual streamflow at the outflow gage."""
-    streamflow = synthetic_data['streamflow']  # (n_realizations, n_months, n_sites)
-    time_index = pd.to_datetime(synthetic_data['streamflow_index'])
-    site_names = synthetic_data['streamflow_columns']
-    
-    # Find the gage index
-    gage_index = list(site_names).index(gage_name)
-    
-    # Get first realization for the outflow gage
-    first_realization = streamflow[0, :, gage_index]  # (n_months,)
-    
-    # Calculate annual streamflow for synthetic
-    n_months = len(first_realization)
-    n_years = n_months // 12
-    annual_synthetic = first_realization.reshape(n_years, 12).sum(axis=1)
-    synthetic_years = np.arange(int(time_index[0].year), int(time_index[0].year) + n_years)
-    
-    # Calculate annual streamflow for historical
-    hist_annual = hist_monthly[gage_name].resample('Y').sum()
-    hist_years = hist_annual.index.year
-    
-    # Create plot
-    fig, ax = plt.subplots(figsize=(12, 6))
-    
-    ax.plot(hist_years, hist_annual.values, marker='o', linewidth=2, label='Historical', alpha=0.7)
-    ax.plot(synthetic_years, annual_synthetic, marker='s', linewidth=2, label='Synthetic (First Realization)', alpha=0.7)
-    
-    ax.set_xlabel('Year', fontsize=12)
-    ax.set_ylabel('Annual Streamflow (acre-feet)', fontsize=12)
-    ax.set_title(f'Outflow Gage Annual Streamflow Comparison - {basin_name} ({filter_name})\nGage: {gage_name}', 
-                fontsize=14, fontweight='bold')
-    ax.legend(fontsize=11)
-    ax.grid(True, alpha=0.3)
-    
-    plt.tight_layout()
-    plt.savefig(output_path, dpi=300, bbox_inches='tight')
-    plt.close()
-    
-    print(f"Saved outflow comparison plot to {output_path}")
-
-def plot_correlation_matrix(streamflow, title, output_path, data_type='monthly'):
+def plot_correlation_matrix(streamflow, site_names, title, output_path):
     """Create correlation matrix heatmap."""
     correlation_matrix = np.corrcoef(streamflow.T)
     
-    sns.set_style("darkgrid")
     fig, ax = plt.subplots(figsize=(10, 8))
     
     cmap = plt.get_cmap("viridis")
-    im = ax.matshow(correlation_matrix, cmap=cmap)
-    fig.colorbar(im)
+    im = ax.matshow(correlation_matrix, cmap=cmap, vmin=0, vmax=1)
+    cbar = fig.colorbar(im, ax=ax)
+    cbar.ax.tick_params(labelsize=12)
     
-    ax.tick_params(axis="both", labelsize=14)
-    ax.set_ylabel("Basin Node", fontsize=16)
-    ax.set_xlabel("Basin Node", fontsize=16)
-    ax.set_title(f'{title}\nCorrelation coefficient by gage site on {data_type} streamflow', 
-                fontsize=14)
+    ax.set_title(title, fontsize=14, fontweight='bold', pad=20)
     
     plt.tight_layout()
     plt.savefig(output_path, dpi=300, bbox_inches='tight')
@@ -145,7 +118,7 @@ def plot_correlation_matrix(streamflow, title, output_path, data_type='monthly')
     print(f"Saved correlation plot to {output_path}")
 
 def explore_streamflow(basin_name, basin, filter_name):
-    """Generate all exploratory plots for a basin."""
+    """Generate all exploratory plots for a basin/filter combination."""
     print(f"\nExploring streamflow for {basin_name} ({filter_name})")
     
     # Create output directory for plots
@@ -155,7 +128,7 @@ def explore_streamflow(basin_name, basin, filter_name):
     # Load synthetic data
     synthetic_data = load_synthetic_data(basin_name, filter_name)
     if synthetic_data is None:
-        return
+        return None
     
     # Load historical data
     hist_monthly = load_historical_data(basin)
@@ -163,56 +136,135 @@ def explore_streamflow(basin_name, basin, filter_name):
     # Get outflow gage name
     gage_name = basin["gage_name"]
     
-    # 1. Plot average annual streamflow
-    avg_annual_path = plot_dir / f"{filter_name}_{basin_name.lower()}_avg_annual_streamflow.png"
-    plot_average_annual_streamflow(synthetic_data, basin_name, filter_name, avg_annual_path)
-    
-    # 2. Plot outflow gage comparison (historical vs synthetic)
-    outflow_comparison_path = plot_dir / f"{filter_name}_{basin_name.lower()}_outflow_comparison.png"
-    plot_outflow_comparison(synthetic_data, hist_monthly, gage_name, basin_name, filter_name, outflow_comparison_path)
-    
-    # 3. Correlation plots for synthetic data (first realization)
     streamflow = synthetic_data['streamflow']  # (n_realizations, n_months, n_sites)
-    time_index = synthetic_data['streamflow_index']
     site_names = synthetic_data['streamflow_columns']
     
-    # Get first realization
-    first_realization = streamflow[0, :, :]  # (n_months, n_sites)
+    # Select a random realization for correlation analysis
+    np.random.seed(42)
+    random_realization_idx = np.random.randint(0, streamflow.shape[0])
+    random_realization = streamflow[random_realization_idx, :, :]  # (n_months, n_sites)
     
-    # Monthly correlation for synthetic
-    monthly_corr_path = plot_dir / f"{filter_name}_{basin_name.lower()}_synthetic_monthly_correlation.png"
-    plot_correlation_matrix(first_realization, 
-                           f'Synthetic Streamflow - {basin_name} ({filter_name}) - First Realization',
-                           monthly_corr_path, 
-                           data_type='monthly')
-    
-    # Annual correlation for synthetic
-    n_months, n_sites = first_realization.shape
-    n_years = n_months // 12
-    annual_synthetic = first_realization.reshape(n_years, 12, n_sites).sum(axis=1)  # (n_years, n_sites)
-    annual_corr_path = plot_dir / f"{filter_name}_{basin_name.lower()}_synthetic_annual_correlation.png"
-    plot_correlation_matrix(annual_synthetic,
-                           f'Synthetic Streamflow - {basin_name} ({filter_name}) - First Realization',
-                           annual_corr_path,
-                           data_type='annual')
-    
-    # 4. Correlation plots for historical data
-    # Monthly correlation for historical
+    # 1. Historical monthly gage correlation plot
     hist_monthly_corr_path = plot_dir / f"{filter_name}_{basin_name.lower()}_historical_monthly_correlation.png"
-    plot_correlation_matrix(hist_monthly.values,
-                           f'Historical Streamflow - {basin_name}',
-                           hist_monthly_corr_path,
-                           data_type='monthly')
+    plot_correlation_matrix(hist_monthly.values, 
+                           hist_monthly.columns.tolist(),
+                           f'Historical Monthly Streamflow Correlation - {basin_name}',
+                           hist_monthly_corr_path)
     
-    # Annual correlation for historical
-    hist_annual = hist_monthly.resample('Y').sum()
-    hist_annual_corr_path = plot_dir / f"{filter_name}_{basin_name.lower()}_historical_annual_correlation.png"
-    plot_correlation_matrix(hist_annual.values,
-                           f'Historical Streamflow - {basin_name}',
-                           hist_annual_corr_path,
-                           data_type='annual')
+    # 2. Synthetic monthly gage correlation plot for a single random realization
+    synthetic_monthly_corr_path = plot_dir / f"{filter_name}_{basin_name.lower()}_synthetic_monthly_correlation.png"
+    plot_correlation_matrix(random_realization,
+                           site_names,
+                           f'Synthetic Monthly Streamflow Correlation - {basin_name} ({filter_name})',
+                           synthetic_monthly_corr_path)
+    
+    # 3. Annual sums over time for 10 random realizations and historical data (outflow gage only)
+    annual_streamflow_path = plot_dir / f"{filter_name}_{basin_name.lower()}_annual_streamflow.png"
+    plot_annual_streamflow_with_historical(synthetic_data, hist_monthly, gage_name, basin_name, filter_name, annual_streamflow_path)
     
     print(f"All plots saved to {plot_dir}")
+    
+    return synthetic_data
+
+def calculate_streamflow_statistics(synthetic_data, gage_name):
+    """Calculate summary statistics for annual streamflow at the outflow gage."""
+    streamflow = synthetic_data['streamflow']  # (n_realizations, n_months, n_sites)
+    site_names = synthetic_data['streamflow_columns']
+    
+    # Find the outflow gage index
+    gage_index = list(site_names).index(gage_name)
+    
+    # Get data for outflow gage only
+    gage_data = streamflow[:, :, gage_index]  # (n_realizations, n_months)
+    
+    # Convert to annual sums
+    n_realizations, n_months = gage_data.shape
+    n_years = n_months // 12
+    
+    # Reshape to (n_realizations, n_years, 12) and sum over months
+    annual_data = gage_data[:, :n_years*12].reshape(n_realizations, n_years, 12).sum(axis=2)  # (n_realizations, n_years)
+    
+    # Flatten to get all annual values across realizations and years
+    annual_values = annual_data.flatten()
+    
+    stats = {
+        'mean': np.mean(annual_values),
+        'median': np.median(annual_values),
+        'min': np.min(annual_values),
+        'max': np.max(annual_values),
+        'std': np.std(annual_values)
+    }
+    
+    return stats
+
+def round_to_n_digits(x, n=4):
+    """Round a number to n significant digits."""
+    if x == 0:
+        return 0
+    from math import log10, floor
+    return round(x, -int(floor(log10(abs(x)))) + (n - 1))
+
+def generate_basin_summary_table(basin_name, basin, filter_sets):
+    """Generate summary table of streamflow statistics across all filter types for a basin (outflow gage only)."""
+    print(f"\n{'='*60}")
+    print(f"Generating summary statistics for {basin_name}")
+    print(f"{'='*60}")
+    
+    # Get outflow gage name
+    gage_name = basin["gage_name"]
+    
+    # Create output directory
+    basin_summary_dir = output_dir / f"basin_summaries"
+    basin_summary_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Collect statistics for each filter
+    rows = []
+    
+    for filter_set in filter_sets:
+        filter_name = filter_set["name"]
+        print(f"Processing filter: {filter_name}")
+        
+        synthetic_data = load_synthetic_data(basin_name, filter_name)
+        if synthetic_data is None:
+            print(f"  Skipping {filter_name} - data not found")
+            continue
+        
+        stats = calculate_streamflow_statistics(synthetic_data, gage_name)
+        
+        row = {
+            'Filter': filter_name,
+            'Mean': stats['mean'],
+            'Median': stats['median'],
+            'Min': stats['min'],
+            'Max': stats['max'],
+            'Std': stats['std']
+        }
+        rows.append(row)
+    
+    if not rows:
+        print(f"No data found for basin {basin_name}")
+        return
+    
+    # Create summary table
+    summary_df = pd.DataFrame(rows)
+    
+    # Save CSV
+    output_path = basin_summary_dir / f"{basin_name.lower()}_summary.csv"
+    summary_df.to_csv(output_path, index=False, float_format='%.2f')
+    print(f"Saved summary table to {output_path}")
+    
+    # Create version with 4 significant digits for LaTeX
+    summary_df_latex = summary_df.copy()
+    for col in ['Mean', 'Median', 'Min', 'Max', 'Std']:
+        summary_df_latex[col] = summary_df_latex[col].apply(lambda x: round_to_n_digits(x, 4))
+    
+    # Save LaTeX table
+    latex_output_path = basin_summary_dir / f"{basin_name.lower()}_summary.tex"
+    latex_str = summary_df_latex.to_latex(index=False, escape=False, float_format='%.0f')
+    with open(latex_output_path, 'w') as f:
+        f.write(latex_str)
+    print(f"Saved LaTeX table to {latex_output_path}")
+    print(f"  Outflow gage: {gage_name}")
 
 def main():
     parser = argparse.ArgumentParser(description='Explore synthetic streamflow data and generate plots')
@@ -244,7 +296,7 @@ def main():
     else:
         basins = BASINS
     
-    # Process selected combinations
+    # Process selected combinations - generate plots for each basin/filter
     for filter_set in filter_sets:
         filter_name = filter_set["name"]
         
@@ -252,6 +304,14 @@ def main():
         
         for basin_name, basin in basins.items():
             explore_streamflow(basin_name, basin, filter_name)
+    
+    # Generate summary tables for each basin across all filters
+    print("\n" + "="*60)
+    print("GENERATING BASIN SUMMARY STATISTICS")
+    print("="*60)
+    
+    for basin_name, basin in basins.items():
+        generate_basin_summary_table(basin_name, basin, filter_sets)
 
 if __name__ == "__main__":
     main()
