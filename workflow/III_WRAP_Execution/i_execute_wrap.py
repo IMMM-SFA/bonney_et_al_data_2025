@@ -8,7 +8,7 @@ from pathlib import Path
 import json
 import argparse
 from toolkit import repo_data_path, outputs_path
-from toolkit.wrap.io import flo_to_df
+from toolkit.wrap.io import flo_to_df, evp_to_df
 from toolkit.data.io import load_netcdf_format
 from toolkit.wrap.execution_slot import LocalWRAPExecutionSlot
 from toolkit.wrap.wraputils import clean_folders, split_into_sublists
@@ -96,6 +96,12 @@ def main():
                 slot.setup()
             clean_folders(diversions_csvs_path, reservoirs_csvs_path, synthetic_flo_output_path)
 
+            # Load original .FLO and .EVA as DataFrames (used for both synthetic FLO
+            # generation and, further down, per-realization synthetic EVA generation)
+            historical_flow_df = flo_to_df(str(flo_file))
+            eva_file = next(f for f in flo_file.parent.iterdir() if f.suffix.lower() == ".eva")
+            historical_eva_df = evp_to_df(str(eva_file))
+
             # Check if synthetic flo folder is empty
             if len(os.listdir(synthetic_flo_output_path)) == 0:
                 # Load synthetic streamflow data
@@ -105,13 +111,10 @@ def main():
                 streamflow_columns = synthetic_data_dict["streamflow_columns"]
                 n_ensembles, n_months, n_sites = streamflow.shape
 
-                # Load original .FLO as DataFrame to get columns
-                flo_df = flo_to_df(str(flo_file))
-
                 # Prepare arguments for each ensemble member
                 ensemble_args = []
                 for ens in range(n_ensembles):
-                    ens_args = (ens, streamflow, streamflow_index, streamflow_columns, basin, flo_df, synthetic_flo_output_path)
+                    ens_args = (ens, streamflow, streamflow_index, streamflow_columns, basin, historical_flow_df, synthetic_flo_output_path)
                     ensemble_args.append(ens_args)
 
                 # Create and start processes
@@ -128,7 +131,10 @@ def main():
                 for process_id, flo_file_list in enumerate(sub_lists):
                     process = multiprocessing.Process(
                         target=wrap_pipeline,
-                        args=(slots[process_id], flo_file_list, diversions_csvs_path, reservoirs_csvs_path, synthetic_flo_output_path)
+                        args=(
+                            slots[process_id], flo_file_list, diversions_csvs_path, reservoirs_csvs_path,
+                            synthetic_flo_output_path, historical_eva_df, historical_flow_df, basin,
+                        )
                     )
                     processes.append(process)
                     process.start()
