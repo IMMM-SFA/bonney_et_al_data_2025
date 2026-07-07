@@ -22,7 +22,6 @@ dependencies = [
       "matplotlib",
       "seaborn",
       "h5py",
-      "hmmlearn",
       "optuna",
       "pyyaml",
       "pytensor",
@@ -42,3 +41,6 @@ classifiers = [
   "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
 ]
+
+[project.optional-dependencies]
+dev = ["pytest"]
