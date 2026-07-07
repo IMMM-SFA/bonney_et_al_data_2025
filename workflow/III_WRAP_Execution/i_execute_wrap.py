@@ -21,6 +21,9 @@ from toolkit.wrap.wraputils import wrap_pipeline, process_ensemble_member
 num_processes = 4  # Use at most 2 processes or half your CPU cores
 
 ### Path Configuration ###
+# On HPC, point WRAP_EXEC_PATH to a tmpfs mount (e.g. /dev/shm/wrap_exec) to
+# keep WRAP's ~0.5 GB per-run .OUT writes in RAM and avoid hammering the
+# parallel filesystem. The directory is auto-created by WRAPExecutionSlot.setup().
 WRAP_EXEC_PATH = Path(repo_data_path) / "WRAP" / "wrap_execution_directories"
 WRAP_SIM_PATH = WRAP_EXEC_PATH / ".." / "SIM.exe"
 
