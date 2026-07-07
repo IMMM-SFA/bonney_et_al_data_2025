@@ -2,7 +2,7 @@ import pandas as pd
 from pandas import DataFrame
 import numpy as np
 from os.path import join
-from toolkit.wrap.wrapdata import WRAP_IDS, COL_FLOW_RIGHTS, COL_CONTROL_POINTS, COL_DIVERSION_RIGHTS, COL_RESERVOIR, N_HEADER, COL_WATER_RIGHT
+from toolkit.wrap.wrapdata import WRAP_IDS, COL_FLOW_RIGHTS, COL_CONTROL_POINTS, COL_DIVERSION_RIGHTS, COL_RESERVOIR, N_HEADER, COL_WATER_RIGHT, COL_CONTROL_POINT
 from pathlib import Path
        
     
@@ -315,6 +315,152 @@ def dat_to_df(wrap_file_path, csv_name: str = None):
     if csv_name:
         water_rights.to_csv(csv_name, index=False)
     return water_rights
+
+
+def cp_to_df(wrap_file_path, csv_name: str = None):
+    """Parses CP (control point) records from a WRAP .dat file.
+
+    Each CP record defines one control point's downstream routing target and, for
+    channel-loss purposes, a secondary reference control point and loss factor. See
+    `kirklocal/wam_formats.md` for the byte-position derivation of `COL_CONTROL_POINT`.
+
+    :param wrap_file_path: path to the WRAP .dat file
+
+    :return: DataFrame with one row per CP record
+    """
+    file_path = Path(wrap_file_path)
+    with open(file_path, "r") as f:
+        lines = f.readlines()
+
+    control_points = []
+    for line in lines:
+        if not line.startswith("CP"):
+            continue
+
+        spot = 0
+        datum = {}
+        for col in COL_CONTROL_POINT:
+            value = line[spot:spot + col["length"]].strip()
+            if len(value) > 0 and value == len(value) * "*":
+                value = col["dtype"](np.nan)
+            elif len(value) == 0:
+                if col["dtype"] == np.int16:
+                    value = 0
+                elif col["dtype"] == np.float32:
+                    value = col["dtype"](np.nan)
+                else:
+                    value = col["dtype"](value)
+            else:
+                value = col["dtype"](value)
+            datum[col["name"]] = value
+            spot += col["length"]
+        control_points.append(datum)
+
+    control_points = pd.DataFrame(control_points)
+    control_points = control_points.drop(columns=["reserved_1", "reserved_2"])
+
+    if csv_name:
+        control_points.to_csv(csv_name, index=False)
+    return control_points
+
+
+def _fixed_width_floats(line, start, width=8):
+    """Slices `line[start:]` into fixed `width`-char chunks and parses each as a
+    float, skipping any trailing chunk left blank by stripped trailing whitespace.
+    """
+    line = line.rstrip("\n\r")
+    values = []
+    for i in range(start, len(line), width):
+        chunk = line[i:i + width].strip()
+        if chunk:
+            values.append(float(chunk))
+    return values
+
+
+def sv_to_df(wrap_file_path, csv_name: str = None):
+    """Parses paired SV/SA reservoir breakpoint-table records from a WRAP .dat file.
+
+    Every SV record (storage volume breakpoints, AF) is immediately followed by one
+    SA record (surface area at each breakpoint, acres) with no id of its own. Returns
+    a long-format DataFrame with one row per (reservoir, breakpoint).
+
+    :param wrap_file_path: path to the WRAP .dat file
+
+    :return: DataFrame with columns reservoir_name, breakpoint_index, storage_af, surface_area_ac
+    """
+    file_path = Path(wrap_file_path)
+    with open(file_path, "r") as f:
+        lines = f.readlines()
+
+    rows = []
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        if line.startswith("SV"):
+            if i + 1 >= len(lines) or not lines[i + 1].startswith("SA"):
+                raise ValueError(f"SV record without a following SA record at line {i}: {line!r}")
+            reservoir_name = line[2:8].strip()
+            # Fixed-width 8-char fields, not whitespace-split: two adjacent wide
+            # values (e.g. "2190" followed by "2922.157") can abut with no space
+            # between them when the first value fills its full 8-char field width,
+            # which `.split()` would incorrectly merge into one token.
+            storage_values = _fixed_width_floats(line, 8)
+            area_values = _fixed_width_floats(lines[i + 1], 8)
+            for idx, (storage_af, surface_area_ac) in enumerate(zip(storage_values, area_values)):
+                rows.append({
+                    "reservoir_name": reservoir_name,
+                    "breakpoint_index": idx,
+                    "storage_af": storage_af,
+                    "surface_area_ac": surface_area_ac,
+                })
+            i += 2
+        else:
+            i += 1
+
+    storage_areas = pd.DataFrame(rows)
+    if csv_name:
+        storage_areas.to_csv(csv_name, index=False)
+    return storage_areas
+
+
+def dis_to_df(wrap_file_path):
+    """Parses a WRAP .DIS file into FD (diversion system identifier) and WP (water
+    right priority) records.
+
+    `FD.fd_id` and `WP.wp_id` share a namespace with `WR.control_point_identifier`
+    from the .dat file (see `kirklocal/wam_formats.md`). FD's optional prorate-CP
+    list and WP's value list are both variable-length, so they are stored as list
+    columns rather than expanded into fixed columns.
+
+    :param wrap_file_path: path to the WRAP .DIS file
+
+    :return: dict with keys "FD" and "WP", each a DataFrame
+    """
+    file_path = Path(wrap_file_path)
+    with open(file_path, "r") as f:
+        lines = f.readlines()
+
+    fd_rows = []
+    wp_rows = []
+    for line in lines:
+        if line.startswith("FD"):
+            fd_rows.append({
+                "fd_id": line[2:8].strip(),
+                "cp_id": line[10:16].strip(),
+                "prorate_count": int(line[16:24].strip() or 0),
+                "prorate_cps": line[24:].split(),
+            })
+        elif line.startswith("WP"):
+            wp_rows.append({
+                "wp_id": line[2:8].strip(),
+                "values": [float(v) for v in line[8:].split()],
+            })
+
+    return {
+        "FD": pd.DataFrame(fd_rows),
+        "WP": pd.DataFrame(wp_rows),
+    }
+
 
 # @profile
 def out_to_csvs(out_file, csv_folder, csvs_to_write=None):
