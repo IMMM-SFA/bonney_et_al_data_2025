@@ -176,6 +176,7 @@ data/
 - `flo_file`: The path to the `.FLO` file associated to the basin (used in WRAP simulations).
 - `usgs_gage_id`: USGS gage identifier for the basin outlet (where available).
 - `external_gages`: WRAP control points outside the basin's 9505 model boundary that are filled from historical data (omitted when none).
+- `reservoir_anchors`: Per-reservoir EVA anchor control points used to disaggregate synthetic net evaporation, keyed by EVA site ID. Each entry contains `anchor_cp` (the control point whose historical streamflow most closely correlates with the reservoir's historical net evaporation) and `anchor_correlation`. Empty (`{}`) until populated by the reservoir correlation analysis.
 
 **`ensemble_filters.json`** defines the different subsets of the 9505 ensemble used for training the BHMM models.
 
