@@ -39,12 +39,10 @@ def split_into_sublists(lst, n):
     return sublists
 
 
-def fix_cols(basin_name, synth_flow, default_flo):
-    """Fix column names for synthetic flow"""
-    if basin_name == "Colorado":
-        # add in historical flow at these two gage sites since they are outside of the CRB
-        synth_flow["INL10000"] = default_flo["INL10000"].astype(float)
-        synth_flow["INL20000"] = default_flo["INL20000"].astype(float)
+def fix_cols(basin_config, synth_flow, default_flo):
+    """Splice in historical flow for gages outside the basin model boundary."""
+    for gage in basin_config.get("external_gages", []):
+        synth_flow[gage] = default_flo[gage].astype(float)
     return synth_flow
 
 
@@ -109,7 +107,7 @@ def wrap_pipeline(
 
 def process_ensemble_member(args):
     """Worker function to process a single ensemble member"""
-    ens, streamflow, streamflow_index, streamflow_columns, basin_name, flo_df, synthetic_flo_output_path = args
+    ens, streamflow, streamflow_index, streamflow_columns, basin_config, flo_df, synthetic_flo_output_path = args
 
     data = streamflow[ens, :, :]
     synth_flow = pd.DataFrame(
@@ -120,7 +118,7 @@ def process_ensemble_member(args):
 
     synth_flow.index = pd.to_datetime(synth_flow.index)
     flo_df.index = synth_flow.index
-    fix_cols(basin_name, synth_flow, flo_df)
+    fix_cols(basin_config, synth_flow, flo_df)
 
     out_name = synthetic_flo_output_path / f"synthflow_{ens:02d}.FLO"
     df_to_flo(synth_flow, out_name)
