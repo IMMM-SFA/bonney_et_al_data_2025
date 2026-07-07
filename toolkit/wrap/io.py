@@ -248,46 +248,43 @@ def his_to_df(filename: str, csv_name: str = None):
     return _monthly_wide_to_df(filename, csv_name)
 
 
-def dat_to_df(wrap_file_path, csv_name: str = None):
-    """TRAVIS THURBER
-    Converts a WRAP input file (.DAT extension) to a CSV file containing water rights records.
-    Other records are currently ignored.
+def _parse_fixed_width_records(lines, schema, prefix=None):
+    """Parses lines against a fixed-width column schema into a DataFrame.
 
-    :param wrap_file_path: path to the WRAP .DAT file
+    Shared by `dat_to_df` (WR records, `COL_WATER_RIGHT`) and `cp_to_df` (CP
+    records, `COL_CONTROL_POINT`) — both schemas follow the same convention: a
+    blank field becomes `0` (int columns) or `NaN` (float columns), and a field
+    that is entirely `*` characters (WRAP's overflow marker) becomes `NaN` with a
+    printed warning.
 
-    :return: None
+    Parameters
+    ----------
+    lines : Iterable[str]
+        Lines to parse.
+    schema : list[dict]
+        Column schema: dicts with 'name', 'dtype', 'length' keys, in byte order.
+    prefix : str, optional
+        If given, lines not starting with this prefix are skipped. If None,
+        every line in `lines` is parsed.
+
+    Returns
+    -------
+    DataFrame
+        One row per matching line, one column per schema entry.
     """
-
-    # read the lines from the file
-    file_path = Path(wrap_file_path)
-    f = open(file_path, 'r')
-    lines = f.readlines()
-
-    # create lists for storing each type of data
-    water_rights = []
-
-    # loop through each line and only parse lines that start with WR
+    records = []
     for line in lines:
-
-        if not (line.startswith('WR')):
+        if prefix is not None and not line.startswith(prefix):
             continue
 
-        #if (line.startswith(('WRA-ZERO','WRENVCAP','WRDRTNUM','WRDRTCON','WRDRTKEY'))):
-        #    continue
-
-        # current position in line
         spot = 0
-
-        # dictionary for the data in this line
         datum = {}
-
-        # loop through each column and parse reservoir data from the line
-        for col in COL_WATER_RIGHT:
+        for col in schema:
             try:
                 value = line[spot:spot + col['length']].strip()
                 if (len(value) > 0) and (value == len(value) * '*'):
                     value = col['dtype'](np.nan)
-                    print(f"WARNING: Value overflow for water right for column {col['name']}:")
+                    print(f"WARNING: Value overflow for column {col['name']}:")
                     print(f"    {line}")
                 elif (len(value) == 0):
                     if (col['dtype'] == np.int16):
@@ -306,10 +303,25 @@ def dat_to_df(wrap_file_path, csv_name: str = None):
                 print(f"Column {col['name']}")
                 print("")
                 raise(e)
-        water_rights.append(datum)
+        records.append(datum)
 
-    # create data frames from each type of data
-    water_rights = pd.DataFrame(water_rights)
+    return pd.DataFrame(records)
+
+
+def dat_to_df(wrap_file_path, csv_name: str = None):
+    """TRAVIS THURBER
+    Converts a WRAP input file (.DAT extension) to a CSV file containing water rights records.
+    Other records are currently ignored.
+
+    :param wrap_file_path: path to the WRAP .DAT file
+
+    :return: None
+    """
+    file_path = Path(wrap_file_path)
+    with open(file_path, 'r') as f:
+        lines = f.readlines()
+
+    water_rights = _parse_fixed_width_records(lines, COL_WATER_RIGHT, prefix='WR')
 
     # creat csv file
     if csv_name:
@@ -332,31 +344,7 @@ def cp_to_df(wrap_file_path, csv_name: str = None):
     with open(file_path, "r") as f:
         lines = f.readlines()
 
-    control_points = []
-    for line in lines:
-        if not line.startswith("CP"):
-            continue
-
-        spot = 0
-        datum = {}
-        for col in COL_CONTROL_POINT:
-            value = line[spot:spot + col["length"]].strip()
-            if len(value) > 0 and value == len(value) * "*":
-                value = col["dtype"](np.nan)
-            elif len(value) == 0:
-                if col["dtype"] == np.int16:
-                    value = 0
-                elif col["dtype"] == np.float32:
-                    value = col["dtype"](np.nan)
-                else:
-                    value = col["dtype"](value)
-            else:
-                value = col["dtype"](value)
-            datum[col["name"]] = value
-            spot += col["length"]
-        control_points.append(datum)
-
-    control_points = pd.DataFrame(control_points)
+    control_points = _parse_fixed_width_records(lines, COL_CONTROL_POINT, prefix="CP")
     control_points = control_points.drop(columns=["reserved_1", "reserved_2"])
 
     if csv_name:
