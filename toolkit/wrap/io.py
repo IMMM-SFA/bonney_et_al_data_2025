@@ -114,6 +114,62 @@ def df_to_flo(flo_df: DataFrame, filename: str):
     return
 
 
+def _monthly_wide_to_df(filename: str, csv_name: str = None):
+    """Reads a WRAP "wide monthly" file (8-char site id, year, 12 monthly values per
+    line) into a pandas DataFrame indexed by month, one column per site.
+
+    Shared by `flo_to_df`, `evp_to_df`, `fad_to_df`, and `his_to_df` — all four WRAP
+    input files (.FLO, .EVA, .FAD, .HIS) use this identical layout. The site id is
+    always exactly 8 characters and must be read with a fixed-width slice rather than
+    `line.split()`: some basins (e.g. Trinity, Sabine) right-pad short ids with an
+    internal space after the 2-character record prefix (`"EV EV409"`), which
+    `line.split()` would incorrectly split into two tokens.
+
+    Parameters
+    ----------
+    filename : str
+        path to the .FLO / .EVA / .FAD / .HIS file
+    csv_name : str, optional
+        path to csv file to write to, by default None
+
+    Returns
+    -------
+    DataFrame
+        Monthly data, one column per site id, indexed by a monthly DatetimeIndex.
+    """
+    with open(filename, "rt") as file:
+        lines = file.readlines()
+    data = []
+    for line in lines:
+        if line[0] != "*":
+            line_data = [line[:8]]  # site id, sometimes contains an internal space
+            # rstrip("*"): C3.HIS has a stray "**" comment marker glued directly
+            # onto its last data value with no separating whitespace ("...0**"),
+            # which would otherwise fail the float cast below.
+            line_data.extend(tok.rstrip("*") or "nan" for tok in line[8:].split())
+            data.append(line_data)
+    df = pd.DataFrame(data)
+    df = df.dropna()
+    df = df.pivot(index=0, columns=1).transpose().swaplevel().sort_index()
+    df = df.reset_index()
+    df = df.rename(columns={1: "year", "level_1": "month"})
+    df["month"] = df["month"] - 1
+    df["year"] = df.year.astype(int)
+    df.insert(
+        0,
+        "date",
+        df.apply(lambda row: np.datetime64(f"{row.year}-{row.month:02d}"), axis=1),
+    )
+    df = df.drop(columns=["year", "month"])
+    df = df.set_index("date")
+    df = df.astype(float)
+
+    if csv_name:
+        df.to_csv(csv_name)
+
+    return df
+
+
 def evp_to_df(file_name: str, csv_name: str = None):
     """Reads evap file into a pandas dataframe and optionally writes the data as a csv
 
@@ -129,76 +185,67 @@ def evp_to_df(file_name: str, csv_name: str = None):
     DataFrame
         Evaporation data
     """
-    with open(file_name, "rt") as file:
-        evap_lines = file.readlines()
-    data = []
-    for line in evap_lines:
-        if line[0] != "*":
-            data.append(line.split())
-    evap_df = pd.DataFrame(data)
-    evap_df = evap_df.dropna()
-    evap_df = evap_df.pivot(index=0, columns=1).transpose().swaplevel().sort_index()
-    evap_df = evap_df.reset_index()
-    evap_df = evap_df.rename(columns={1: "year", "level_1": "month"})
-    evap_df["month"] = evap_df["month"] - 1
-    evap_df["year"] = evap_df.year.astype(int)
-    evap_df.insert(
-        0,
-        "date",
-        evap_df.apply(lambda row: np.datetime64(f"{row.year}-{row.month:02d}"), axis=1),
-    )
-    evap_df = evap_df.drop(columns=["year", "month"])
-    evap_df = evap_df.set_index("date")
-    if csv_name:
-        evap_df.write_csv(csv_name)
-
-    return evap_df
+    return _monthly_wide_to_df(file_name, csv_name)
 
 
 def flo_to_df(filename: str, csv_name: str = None):
-    """Reads evap file into a pandas dataframe and optionally writes the data as a csv
+    """Reads a natural streamflow (.FLO) file into a pandas dataframe and optionally
+    writes the data as a csv
 
     Parameters
     ----------
-    file_name : str
-        path to .EVA file
+    filename : str
+        path to .FLO file
     csv_name : str, optional
         path to csv file to write to, by default None
 
     Returns
     -------
     DataFrame
-        Evaporation data
+        Streamflow data
     """
-    with open(filename, "rt") as file:
-        evap_lines = file.readlines()
-    data = []
-    for line in evap_lines:
-        if line[0] != "*":
-            line_data = []
-            line_data.append(line[:8]) # index, sometimes contains spaces
-            line_data.extend(line[8:].split())
-            data.append(line_data)
-    flo_df = pd.DataFrame(data)
-    flo_df = flo_df.dropna()
-    flo_df = flo_df.pivot(index=0, columns=1).transpose().swaplevel().sort_index()
-    flo_df = flo_df.reset_index()
-    flo_df = flo_df.rename(columns={1: "year", "level_1": "month"})
-    flo_df["month"] = flo_df["month"] - 1
-    flo_df["year"] = flo_df.year.astype(int)
-    flo_df.insert(
-        0,
-        "date",
-        flo_df.apply(lambda row: np.datetime64(f"{row.year}-{row.month:02d}"), axis=1),
-    )
-    flo_df = flo_df.drop(columns=["year", "month"])
-    flo_df = flo_df.set_index("date")
-    flo_df = flo_df.astype(float)
-    
-    if csv_name:
-        flo_df.write_csv(csv_name)
-        
-    return flo_df
+    return _monthly_wide_to_df(filename, csv_name)
+
+
+def fad_to_df(filename: str, csv_name: str = None):
+    """Reads a flow-at-diversion targets (.FAD) file into a pandas dataframe and
+    optionally writes the data as a csv. Same site-id/year/12-monthly-value layout
+    as `.FLO`.
+
+    Parameters
+    ----------
+    filename : str
+        path to .FAD file
+    csv_name : str, optional
+        path to csv file to write to, by default None
+
+    Returns
+    -------
+    DataFrame
+        Flow-at-diversion target data
+    """
+    return _monthly_wide_to_df(filename, csv_name)
+
+
+def his_to_df(filename: str, csv_name: str = None):
+    """Reads a historical reservoir operating tier (.HIS) file into a pandas
+    dataframe and optionally writes the data as a csv. Same site-id/year/12-monthly-
+    value layout as `.FLO`; values are small integer tier codes rather than
+    continuous quantities.
+
+    Parameters
+    ----------
+    filename : str
+        path to .HIS file
+    csv_name : str, optional
+        path to csv file to write to, by default None
+
+    Returns
+    -------
+    DataFrame
+        Historical operating tier data
+    """
+    return _monthly_wide_to_df(filename, csv_name)
 
 
 def dat_to_df(wrap_file_path, csv_name: str = None):
