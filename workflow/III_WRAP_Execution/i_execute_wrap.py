@@ -10,7 +10,7 @@ import argparse
 from toolkit import repo_data_path, outputs_path
 from toolkit.wrap.io import flo_to_df
 from toolkit.data.io import load_netcdf_format
-from toolkit.wrap.execution_slot import WRAPExecutionSlot
+from toolkit.wrap.execution_slot import LocalWRAPExecutionSlot
 from toolkit.wrap.wraputils import clean_folders, split_into_sublists
 from toolkit.wrap.wraputils import wrap_pipeline, process_ensemble_member
 
@@ -85,7 +85,7 @@ def main():
 
             # Reset execution slots and clean output directories from previous runs
             slots = [
-                WRAPExecutionSlot(WRAP_EXEC_PATH / f"execution_folder_{i}", flo_file.parent, WRAP_SIM_PATH, base_name)
+                LocalWRAPExecutionSlot(WRAP_EXEC_PATH / f"execution_folder_{i}", flo_file.parent, WRAP_SIM_PATH, base_name)
                 for i in range(num_processes)
             ]
             for slot in slots:
