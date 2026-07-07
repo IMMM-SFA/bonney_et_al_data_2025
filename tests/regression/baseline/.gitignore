@@ -1,0 +1,3 @@
+# Baseline .npz files are machine-local; generate them with:
+#   pytest tests/regression/ --generate-baseline
+*.npz
