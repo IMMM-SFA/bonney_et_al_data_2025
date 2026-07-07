@@ -118,6 +118,18 @@ COL_RESERVOIR = [
     dict(name='reservoir_storage_capacity', dtype=np.float32, length=9),
 ]
 
+COL_CONTROL_POINT = [
+    dict(name='record_type', dtype=str, length=2),
+    dict(name='cp_id', dtype=str, length=6),
+    dict(name='downstream_cp', dtype=str, length=8),
+    dict(name='reserved_1', dtype=str, length=22),
+    dict(name='cp_type', dtype=np.int16, length=2),
+    dict(name='reserved_2', dtype=str, length=10),
+    dict(name='channel_loss_cp', dtype=str, length=8),
+    dict(name='flag', dtype=np.float32, length=6),
+    dict(name='loss_factor', dtype=np.float32, length=10),
+]
+
 COL_WATER_RIGHT = [
     dict(name='record_type', dtype=str, length=2),
     dict(name='control_point_identifier', dtype=str, length=6),
