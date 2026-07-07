@@ -1,7 +1,7 @@
 import os
 import pandas as pd
 from pathlib import Path
-from toolkit.wrap.io import out_to_csvs, df_to_flo
+from toolkit.wrap.io import out_to_dfs, df_to_flo
 from toolkit.emulator.processing import process_diversion_csv, process_reservoir_csv
 
 
@@ -69,21 +69,17 @@ def wrap_pipeline(
 
         out_file = slot.slot_dir / f"{flo_name}.OUT"
         mss_file = slot.slot_dir / f"{flo_name}.MSS"
-        out_to_csvs(str(out_file), str(slot.slot_dir), csvs_to_write=["diversions", "reservoirs"])
+        dfs = out_to_dfs(out_file)
 
-        diversions_path = slot.slot_dir / f"{flo_name}_diversions.csv"
-        diversions_df = pd.read_csv(diversions_path)
         diversion_data = process_diversion_csv(
-            diversions_df,
+            dfs["diversions"],
             column_names=["diversion_or_energy_shortage", "diversion_or_energy_target"],
             compute_shortage_ratio=True)
         for key, value in diversion_data.items():
             value.to_csv(Path(diversions_csvs_path) / f"{flo_name}_{key}.csv")
 
-        reservoirs_path = slot.slot_dir / f"{flo_name}_reservoirs.csv"
-        reservoirs_df = pd.read_csv(reservoirs_path)
         reservoir_data = process_reservoir_csv(
-            reservoirs_df,
+            dfs["reservoirs"],
             column_names=[
                 "reservoir_water_surface_elevation",
                 "reservoir_storage_capacity",
@@ -99,8 +95,6 @@ def wrap_pipeline(
 
         out_file.unlink()
         mss_file.unlink()
-        diversions_path.unlink()
-        reservoirs_path.unlink()
         count += 1
         print(count, flo_file, f"slot: {slot.slot_dir.name}")
 

@@ -446,6 +446,100 @@ def out_to_csvs(out_file, csv_folder, csvs_to_write=None):
         print(f'{file_path.stem}_reservoirs.csv')
 
 
+def out_to_dfs(out_file, dfs_to_parse=None):
+    """Parse a WRAP .OUT file directly to DataFrames without writing to disk.
+
+    Parameters
+    ----------
+    out_file : str or Path
+        Path to the WRAP .OUT file.
+    dfs_to_parse : list[str], optional
+        Subset of {"diversions", "flow_rights", "control_points", "reservoirs"}.
+        Defaults to ["diversions", "reservoirs"].
+
+    Returns
+    -------
+    dict[str, pd.DataFrame]
+        Keyed by the names in dfs_to_parse.
+    """
+    if dfs_to_parse is None:
+        dfs_to_parse = ["diversions", "reservoirs"]
+
+    parse_cp = "control_points" in dfs_to_parse
+    parse_res = "reservoirs" in dfs_to_parse
+
+    file_path = Path(out_file)
+    with open(file_path, "r") as f:
+        lines = f.readlines()
+
+    meta = lines[N_HEADER - 1].split()
+    start_year = int(meta[0])
+    n_years = int(meta[1])
+    n_control_points = int(meta[2])
+    n_water_rights = int(meta[3])
+    n_reservoirs = int(meta[4])
+
+    data_diversions = []
+    data_flow_rights = []
+    data_control_points = []
+    data_reservoirs = []
+
+    block = n_water_rights + n_control_points + n_reservoirs
+
+    for i_year in np.arange(n_years):
+        for i_month in np.arange(12):
+            n_month = i_year * 12 + i_month
+            base = N_HEADER + n_month * block
+
+            for line in lines[base : base + n_water_rights]:
+                spot = 0
+                datum = {}
+                is_flow_right = line.startswith("IF")
+                if is_flow_right:
+                    datum["year"] = np.int16(start_year + i_year)
+                for col in (COL_FLOW_RIGHTS if is_flow_right else COL_DIVERSION_RIGHTS):
+                    if col["name"] != "IF":
+                        value = line[spot : spot + col["length"]].strip()
+                        if len(value) > 0 and value == len(value) * "*":
+                            value = col["dtype"](np.nan)
+                        else:
+                            value = col["dtype"](value)
+                        datum[col["name"]] = value
+                    spot += col["length"]
+                (data_flow_rights if is_flow_right else data_diversions).append(datum)
+
+            if parse_cp:
+                for line in lines[base + n_water_rights : base + n_water_rights + n_control_points]:
+                    spot = 0
+                    datum = {"year": np.int16(start_year + i_year), "month": np.int16(i_month + 1)}
+                    for col in COL_CONTROL_POINTS:
+                        value = line[spot : spot + col["length"]].strip()
+                        datum[col["name"]] = col["dtype"](np.nan) if (len(value) > 0 and value == len(value) * "*") else col["dtype"](value)
+                        spot += col["length"]
+                    data_control_points.append(datum)
+
+            if parse_res:
+                for line in lines[base + n_water_rights + n_control_points : base + block]:
+                    spot = 0
+                    datum = {"year": np.int16(start_year + i_year), "month": np.int16(i_month + 1)}
+                    for col in COL_RESERVOIR:
+                        value = line[spot : spot + col["length"]].strip()
+                        datum[col["name"]] = col["dtype"](np.nan) if (len(value) > 0 and value == len(value) * "*") else col["dtype"](value)
+                        spot += col["length"]
+                    data_reservoirs.append(datum)
+
+    result = {}
+    if "diversions" in dfs_to_parse:
+        result["diversions"] = pd.DataFrame(data_diversions)
+    if "flow_rights" in dfs_to_parse:
+        result["flow_rights"] = pd.DataFrame(data_flow_rights)
+    if parse_cp:
+        result["control_points"] = pd.DataFrame(data_control_points)
+    if parse_res:
+        result["reservoirs"] = pd.DataFrame(data_reservoirs)
+    return result
+
+
 def process_right_sectors(dat_file_path, filter_sectors=True, sectors=None):
     dat = pd.read_csv(dat_file_path)
     if filter_sectors:
