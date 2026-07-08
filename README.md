@@ -1,4 +1,4 @@
-# bonney_et-al_2025_msd-live
+# bonney_et_al_data_2025
 
 Kirk Bonney<sup>1\*</sup>, Nicole D. Jackson<sup>1</sup>, Stephen Ferencz<sup>2</sup>, Thushara Gunda<sup>1</sup>, and Raquel Valdez<sup>1\*</sup>
 
@@ -21,7 +21,7 @@ TODO
 | Water Rights for the Colorado River Basin                                        | https://tceq.maps.arcgis.com/apps/webappviewer/index.html?id=44adc80d90b749cb85cf39e04027dbdc | n/a              |
 
 ## Reproduce this work
-Clone this repository (`git clone https://github.com/IMMM-SFA/bonney_et-al_2025_msd-live.git`) and install the `toolkit` package into a Python 3.11 environment (`pip install -e .`). Copy the data/ folder from the accompanying [MSD-Live archive](https://data.msdlive.org/records/7axm9-yys69) as a top level directory in the repository. Once the environment is established, this work can be reproduced by running scripts from the workflow/ directory. There are four subdirectories which correspond to different stages of the experiment:
+Clone this repository (`git clone https://github.com/IMMM-SFA/bonney_et_al_data_2025.git`) and install the `toolkit` package into a Python 3.11 environment (`pip install -e .`). Copy the data/ folder from the accompanying [MSD-Live archive](https://data.msdlive.org/records/7axm9-yys69) as a top level directory in the repository. Once the environment is established, this work can be reproduced by running scripts from the workflow/ directory. There are four subdirectories which correspond to different stages of the experiment:
 
 | Directory name              | Description                                                                                                                                                                                                                                   |
 |-----------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|

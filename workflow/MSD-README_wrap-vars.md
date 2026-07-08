@@ -7,7 +7,7 @@ The dataset is generated using a Bayesian Hidden Markov Model (BHMM) trained on 
 Basins:
 - Colorado River Basin
 - Trinity River Basin
-- Trinity River Basin
+- Sabine River Basin
 
 9505 Subsets:
 - All Models (All 48 ensemble members)
@@ -173,7 +173,7 @@ data/
 - `reach_id`: The name of the reach in the 9505 data which has been associated to the outflow gage.
 - `flo_file`: The path to the .FLO file associated to the basin (used in WRAP simulations).
 
-**`ensemble_filters.json`** and **`ensemble_filters_basic.json`** define the different subsets of the 9505 ensemble used for training the BHMM models.
+**`ensemble_filters.json`** defines the different subsets of the 9505 ensemble used for training the BHMM models.
 
 **`wrap_variable_metadata.json`** contains metadata for all WRAP output variables, including units, descriptions, and names for diversion and reservoir variables.
 
@@ -228,6 +228,3 @@ reservoir_elevation = ds['reservoir_water_surface_elevation'] # [realization, ti
 reservoir_capacity = ds['reservoir_storage_capacity'] # [realization, time_step reservoir_id]
 energy_generated = ds['reservoir_energy_generated'] # [realization, time_step reservoir_id]
 ```
-
-## Scripts
-`explore_netcdf.py` walks through the opening of the NetCDF file and exploration of its contents.

@@ -5,7 +5,7 @@ This dataset is generated using a Bayesian Hidden Markov Model (BHMM) trained on
 Basins:
 - Colorado River Basin
 - Trinity River Basin
-- Trinity River Basin
+- Sabine River Basin
 
 9505 Subsets:
 - All Models (All 48 ensemble members)
