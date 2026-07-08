@@ -1,4 +1,3 @@
-from hmmlearn import hmm
 import numpy as np
 import pymc as pm
 import arviz as az
@@ -15,6 +14,7 @@ import h5py
 
 from toolkit.wrap.io import flo_to_df
 from toolkit.graphics.hmm import plot_results, plot_diagnostics, plot_hmm_diagnostics
+from toolkit.hmm.disaggregation import disaggregate_annual_to_monthly
 
 logger = logging.getLogger(__name__)
 
@@ -437,55 +437,6 @@ class BayesianStreamflowHMM:
         """
         plot_results(self.idata, data, states, self.n_states, output_dir)
 
-    def plot_synthetic_comparison(
-        self,
-        historical_data: np.ndarray,
-        ensemble_data: np.ndarray,
-        n_years: int,
-        n_samples: int = 5,
-        output_dir: Optional[Path] = None
-    ) -> None:
-        """
-        Plot comparison between historical, ensemble, and synthetic data.
-       
-        Parameters
-        ----------
-        historical_data : np.ndarray
-            Historical streamflow data
-        ensemble_data : np.ndarray
-            Ensemble streamflow data
-        n_years : int
-            Number of years to plot
-        n_samples : int, default=5
-            Number of synthetic samples to generate
-        output_dir : Optional[Path], default=None
-            Directory to save plots. If None, plots are displayed.
-        """
-        logger.info("Generating synthetic comparison...")
-        if self.idata is None:
-            raise ValueError("Model must be fit before generating synthetic data")
-           
-        # Generate synthetic data
-        synthetic = self.generate_annual_streamflow(
-            n_years=n_years,
-        )
-       
-        # Get states for synthetic data
-        synthetic_states = np.zeros((n_samples, n_years), dtype=int)
-        for i in range(n_samples):
-            synthetic_states[i] = self.predict_states(synthetic[i:i+1])[0]
-       
-        plot_synthetic_comparison(
-            self.idata,
-            historical_data,
-            ensemble_data,
-            synthetic,
-            synthetic_states,
-            n_years,
-            n_samples,
-            output_dir=output_dir
-        )
-
     def plot_diagnostics(self, output_dir: Optional[Path] = None) -> None:
         """
         Generate comprehensive diagnostic plots for the fitted model.
@@ -648,11 +599,14 @@ class BayesianStreamflowHMM:
         annual_streamflow: np.ndarray,
         historical_monthly_data: np.ndarray,
         outflow_index: int,
-        random_seed: Optional[int] = None
+        random_seed: Optional[int] = None,
+        rng: Optional[np.random.Generator] = None,
     ) -> pd.DataFrame:
         """
         Disaggregate annual streamflow data to monthly values using historical patterns.
-       
+
+        Thin wrapper around `toolkit.hmm.disaggregation.disaggregate_annual_to_monthly`.
+
         Parameters
         ----------
         annual_streamflow : np.ndarray
@@ -662,93 +616,24 @@ class BayesianStreamflowHMM:
         outflow_index : int
             Index of the outflow control point site to use for distance calculation
         random_seed : Optional[int], default=None
-            Random seed for reproducibility
-           
+            Random seed for reproducibility. Ignored if `rng` is provided.
+        rng : Optional[np.random.Generator], default=None
+            Random number generator for neighbor sampling. Takes precedence over `random_seed`.
+
         Returns
         -------
         pd.DataFrame
             Disaggregated monthly streamflow data
         """
-        # Set random seed
-        if random_seed is not None:
-            np.random.seed(random_seed)
-           
-        num_years = len(annual_streamflow)
-        hist_years = int(historical_monthly_data.shape[0] / 12)
-        hist_monthly_sf = historical_monthly_data.reshape(hist_years, 12, -1)
-        num_sites = hist_monthly_sf.shape[2]
-       
-        # Extract outflow control point data
-        outflow_hist_monthly_sf = hist_monthly_sf[:, :, outflow_index]
-        outflow_hist_annual_sf = np.sum(outflow_hist_monthly_sf, axis=1)
-       
-        # Compute distances between synthetic and historical annual flows using outflow node
-        annual_distances = np.abs(
-            np.subtract.outer(annual_streamflow, outflow_hist_annual_sf)
+        if rng is None:
+            rng = np.random.default_rng(random_seed)
+
+        return disaggregate_annual_to_monthly(
+            annual_values=annual_streamflow,
+            historical_monthly_data=historical_monthly_data,
+            anchor_index=outflow_index,
+            rng=rng,
         )
-       
-        # Initialize synthetic monthly data
-        synth_monthly_sf = np.zeros((num_years, 12, num_sites))
-       
-        # Compute spatial ratios: each site relative to outflow control point
-        Vratios_mh = np.zeros(hist_monthly_sf.shape)
-        for i in range(num_sites):
-            Vratios_mh[:, :, i] = hist_monthly_sf[:, :, i] / outflow_hist_monthly_sf
-       
-        # Compute temporal breakdown: outflow monthly relative to outflow annual
-        outflow_temporal_breakdown = np.zeros((hist_years, 12))
-        for i in range(hist_years):
-            outflow_temporal_breakdown[i, :] = (
-                outflow_hist_monthly_sf[i, :] / outflow_hist_annual_sf[i]
-            )
-       
-        # Compute neighbor probabilities (inverse distance weighting)
-        k = int(np.sqrt(hist_years))
-        neighbor_probabilities = np.zeros(k)
-        for j in range(k):
-            neighbor_probabilities[j] = 1 / (j + 1)
-        neighbor_probabilities = neighbor_probabilities / np.sum(neighbor_probabilities)
-       
-        # Track zero values
-        total_zeros = 0
-       
-        # For each synthetic year
-        for j in range(num_years):
-            # Find k nearest neighbors
-            indices = np.argsort(annual_distances[j])[:k]
-           
-            # Select neighbor based on weighted probabilities
-            neighbor_idx = np.random.choice(indices, p=neighbor_probabilities)
-           
-            # Step 1: Disaggregate outflow from annual to monthly (temporal)
-            synth_monthly_sf[j, :, outflow_index] = (
-                outflow_temporal_breakdown[neighbor_idx, :] * annual_streamflow[j]
-            )
-           
-            # Step 2: Disaggregate across all sites (spatial)
-            for n in range(12):
-                synth_monthly_sf[j, n, :] = (
-                    Vratios_mh[neighbor_idx, n, :] * synth_monthly_sf[j, n, outflow_index]
-                )
-                zeros = (Vratios_mh[neighbor_idx, n, :] == 0).sum()
-                total_zeros += zeros
-       
-        # Reshape to (num_years * 12, num_sites)
-        synth_monthly_sf = synth_monthly_sf.reshape(num_years * 12, num_sites)
-       
-        # Create DataFrame with datetime index
-        start = "2000-01"  # Default start date, can be overridden by caller
-        end = str(2000 + num_years - 1) + "-12"
-        time_range = pd.date_range(start=start, end=end, freq="MS")
-       
-        # Create DataFrame
-        monthly_streamflow = pd.DataFrame(
-            synth_monthly_sf,
-            index=time_range,
-            columns=[f"site_{i}" for i in range(num_sites)]
-        )
-       
-        return monthly_streamflow
 
     def generate_synthetic_streamflow(
         self,
@@ -805,7 +690,8 @@ class BayesianStreamflowHMM:
             raise ValueError("Model must be fit before generating synthetic data")
         if random_seed is not None:
             np.random.seed(random_seed)
-        
+        disaggregation_rng = np.random.default_rng(random_seed)
+
         # reshape historical_monthly_data to (n_years, 12, n_locations)
         hist_monthly_sf = historical_monthly_data.reshape(historical_monthly_data.shape[0]//12, 12, -1)
         
@@ -862,12 +748,13 @@ class BayesianStreamflowHMM:
                 states[t] = np.random.choice(self.n_states, p=probs)
                 annual_synthetic[t] = np.random.normal(mu[states[t]], sigma[states[t]])
             annual_synthetic = np.expm1(annual_synthetic)
-            # Disaggregate to monthly (random_seed=None allows it to use the global random state)
+            # Disaggregate to monthly using a dedicated rng (advances across ensemble members,
+            # independent of the global numpy random state used for posterior/state sampling above)
             synth_monthly = self.disaggregate_annual_streamflow(
                 annual_streamflow=annual_synthetic,
                 historical_monthly_data=historical_monthly_data,
                 outflow_index=outflow_index,
-                random_seed=None
+                rng=disaggregation_rng,
             )
             # synth_monthly: (n_months, n_locations)
             streamflow[:, :, ens] = synth_monthly.values if hasattr(synth_monthly, 'values') else synth_monthly
@@ -894,130 +781,3 @@ class BayesianStreamflowHMM:
             'annual_states_index': year_index
         }
         return data_dictionary
-
-
-class WRAPStreamFlow:
-    """Synthetic streamflow generation via HMM using WRAP .FLO file
-    """
-    def __init__(self, flo_file, outflow_name=None, ignore_columns=None):
-        self.flo_file = flo_file
-        self.outflow_name = outflow_name
-        self.ignore_columns = ignore_columns
-
-    def load_streamflows(self, start_year=None, end_year=None):
-        self.monthly_flo_df = flo_to_df(self.flo_file)
-        if self.ignore_columns is not None:
-            self.monthly_flo_df = self.monthly_flo_df.loc[:, ~self.monthly_flo_df.columns.isin(self.ignore_columns)]
-        if start_year is not None:
-            self.monthly_flo_df = self.monthly_flo_df[self.monthly_flo_df.index.year >= start_year]
-        if end_year is not None:
-            self.monthly_flo_df = self.monthly_flo_df[self.monthly_flo_df.index.year >= end_year]
-        self.annual_flo_df = self.monthly_flo_df.groupby(self.monthly_flo_df.index.year).sum()
-        if self.outflow_name is not None:
-            self.outflow_index = list(self.monthly_flo_df.columns).index(self.outflow_name)
-
-    def _fit_HMM(self, random_seed, n_iter=1000):
-        outflow_sf = self.annual_flo_df.loc[:, self.outflow_name].values
-        # log_outflow_sf = np.log1p(outflow_sf)
-        self.hmm = hmm.GaussianHMM(
-            n_components=2, n_iter=n_iter, random_state=random_seed
-        ).fit(outflow_sf.reshape(-1, 1))
-        return self
-
-    def _generate_synthetic_annual_sf(self, num_years, drought=None, random_state=None):
-        if self.hmm is None:
-            raise Exception("Model has not been fit.")
-
-        # if drought parameter is provided, adjust transition parameters to increase drought.
-        if drought is not None:
-            if self.hmm.means_[0] < self.hmm.means_[1]: # identify which state is dry and which is wet
-                dry_state = 0
-                wet_state = 1
-            else:
-                dry_state = 1
-                wet_state = 0
-
-            # increase drought state likelihoods based on climate_drought_adjustment parameter
-            self.hmm.transmat_[:,dry_state] = self.hmm.transmat_[:,dry_state] + self.hmm.transmat_[:,wet_state]* drought
-            self.hmm.transmat_[:,wet_state] = self.hmm.transmat_[:,wet_state] - self.hmm.transmat_[:,wet_state]* drought
-
-        log_annual_synthetic_outflow_sf = self.hmm.sample(num_years, random_state=random_state)
-        # annual_synthetic_outflow_sf = np.exp(log_annual_synthetic_outflow_sf[0]) - 1
-        annual_synthetic_outflow_sf = log_annual_synthetic_outflow_sf[0]
-
-        return annual_synthetic_outflow_sf
-
-    def _disaggregate_sf(self, annual_synthetic_outflow_sf, random_state=None):
-        np.random.seed(random_state)
-        outflow_hist_annual_sf = self.annual_flo_df.loc[:, self.outflow_name].values
-        hist_years = outflow_hist_annual_sf.shape[0]
-        synth_years = annual_synthetic_outflow_sf.shape[0]
-        hist_monthly_sf = self.monthly_flo_df.values.reshape(hist_years, 12, -1)
-        outflow_hist_monthly_sf = hist_monthly_sf[:, :, self.outflow_index]
-        num_sites = len(self.monthly_flo_df.columns)
-
-        # compute the similarities in outflow control point streamflow between synthetic and historical data
-        annual_distances = abs(
-            np.subtract.outer(annual_synthetic_outflow_sf, outflow_hist_annual_sf)
-        )
-        annual_distances = annual_distances.squeeze()
-
-        # initialize the full synthetic data array
-        synth_monthly_sf = np.zeros([synth_years, 12, num_sites])
-
-        # compute ratios of flow between all control points and the outflow control points in historical data
-        Vratios_mh = np.zeros(hist_monthly_sf.shape)
-        for i in range(np.shape(hist_monthly_sf)[2]):
-            Vratios_mh[:, :, i] = hist_monthly_sf[:, :, i] / outflow_hist_monthly_sf
-
-        neighbor_probabilities = np.zeros([int(np.sqrt(hist_years))])
-        # We sample from the square root of the number of years many neighbors
-        for j in range(len(neighbor_probabilities)):
-            neighbor_probabilities[j] = 1 / (j + 1)
-        neighbor_probabilities = neighbor_probabilities / np.sum(neighbor_probabilities)
-
-        outflow_temporal_breakdown = np.zeros([hist_years, 12])
-        for i in range(outflow_hist_monthly_sf.shape[0]):
-            outflow_temporal_breakdown[i, :] = (
-                outflow_hist_monthly_sf[i, :] / outflow_hist_annual_sf[i]
-            )
-        total_zeros = 0
-        for j in range(synth_years):
-            # select one of k nearest neighbors for each simulated year
-            indices = np.argsort(annual_distances[j, :])[
-                0 : int(np.sqrt(hist_years))
-            ]  # obtain nearest neighbor indices
-            neighbor_index = np.random.choice(
-                indices, 1, p=neighbor_probabilities
-            )  # use probabilities to randomly choose a neighbor
-
-            # use selected neighbor to disaggregate to monthly timescale
-            synth_monthly_sf[j, :, -1] = (
-                outflow_temporal_breakdown[neighbor_index, :]
-                * annual_synthetic_outflow_sf[j]
-            )
-
-            # use selected neighbor to disagregate across gage sites
-            for k in range(12):
-                synth_monthly_sf[j, k, :] = (
-                    Vratios_mh[neighbor_index, k, :] * synth_monthly_sf[j, k, -1]
-                )
-                zeros = (Vratios_mh[neighbor_index, k, :] == 0).sum()
-                total_zeros += zeros
-
-        synth_monthly_sf = np.reshape(synth_monthly_sf, (synth_years * 12, num_sites))
-        return synth_monthly_sf
-
-    def generate_synthetic_streamflow(self, start_year, num_years, drought=None, random_seed=None):
-        self._fit_HMM(random_seed)
-        annual_synthetic_outflow_sf = self._generate_synthetic_annual_sf(num_years, drought=drought, random_state=random_seed)
-        synthetic_monthly_flow = self._disaggregate_sf(annual_synthetic_outflow_sf, random_state=random_seed)
-        start = str(start_year) + "-01"
-        end = str(int(start_year) + num_years-1) + "-12"
-        time_range = pd.date_range(start=start, end=end, freq="MS")
-        assert len(time_range) == synthetic_monthly_flow.shape[0]
-        synthetic_streamflow = pd.DataFrame(
-            synthetic_monthly_flow, columns=self.monthly_flo_df.columns, index=time_range
-        )
-
-        return synthetic_streamflow

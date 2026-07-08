@@ -6,7 +6,7 @@ build-backend = "hatchling.build"
 name = "toolkit"
 description = "Supporting functions for repository analysis"
 readme = "README.md"
-version = "1.0.0"
+version = "2.0.0"
 authors = [
   { name = "Kirk Bonney", email = "klbonne@sandia.gov" },
 ]
@@ -16,13 +16,12 @@ maintainers = [
 requires-python = ">=3.8"
 
 dependencies = [
-      "numpy", 
+      "numpy",
       "pandas",
       "xarray",
       "matplotlib",
       "seaborn",
       "h5py",
-      "hmmlearn",
       "optuna",
       "pyyaml",
       "pytensor",
@@ -31,6 +30,8 @@ dependencies = [
       "scipy",
       "pysal",
       "esda",
+      "geopandas",
+      "shapely",
     ]
 
 classifiers = [
@@ -42,3 +43,14 @@ classifiers = [
   "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
 ]
+
+[project.optional-dependencies]
+dev = ["pytest"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+
+[tool.pyright]
+include = ["toolkit", "tests"]
+venvPath = "."
+venv = ".venv"

@@ -1,0 +1,38 @@
+# Singularity definition file for the WRAP SIM.exe runtime.
+#
+# Bakes Wine64 and SIM.exe into the image so WRAP can run on HPC clusters
+# that do not allow Wine to be installed system-wide.
+#
+# Build (run from repo root so %files paths resolve):
+#   singularity build containers/wrap.sif containers/wrap.def
+#
+# The resulting wrap.sif is used by SingularityWRAPExecutionSlot:
+#   slot = SingularityWRAPExecutionSlot(slot_dir, wam_path, "containers/wrap.sif")
+#
+# SIM.exe is copied into the image at build time and is NOT distributed with
+# the repo. The file must be present at data/WRAP/SIM.exe before building.
+
+Bootstrap: docker
+From: ubuntu:22.04
+
+%files
+    data/WRAP/SIM.exe /wrap/SIM.exe
+
+%post
+    apt-get update -qq
+    dpkg --add-architecture i386
+    apt-get update -qq
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+        wine64 \
+        wine32 \
+        winbind
+    rm -rf /var/lib/apt/lists/*
+    mkdir -p /wrap/slot
+
+%environment
+    # Silence Wine debug output; WRAP produces no GUI so no DISPLAY needed
+    export WINEDEBUG=-all
+    export DISPLAY=
+
+%labels
+    Description WRAP SIM.exe runtime with Wine64 for HPC execution
