@@ -677,7 +677,7 @@ def _overflow_mask(stripped_series):
 
 def _cast_fixed_width_column(raw, dtype):
     """Vectorized equivalent of, per row: value = raw.strip(); dtype(nan) if value
-    is all '*', else dtype(value)."""
+    is all '*' or blank (dtype(0) instead, for int columns), else dtype(value)."""
     if dtype is not str:
         # numpy's string->float parser tolerates surrounding whitespace natively, so
         # skip strip()/overflow-scan entirely unless something doesn't parse (the
@@ -687,12 +687,16 @@ def _cast_fixed_width_column(raw, dtype):
         except ValueError:
             pass
         stripped = pd.Series(np.char.strip(raw))
-        is_overflow = _overflow_mask(stripped)
-        safe = stripped.where(~is_overflow, "0")
+        lengths = stripped.str.len()
+        is_blank = lengths == 0
+        is_overflow = (~is_blank) & (~stripped.str.contains(r"[^*]", regex=True))
+        safe = stripped.where(~(is_overflow | is_blank), "0")
         numeric = safe.to_numpy(dtype=np.float64)
-        if is_overflow.any():
+        if is_overflow.any() or is_blank.any():
             numeric = numeric.copy()
             numeric[is_overflow.to_numpy()] = np.nan
+            if dtype != np.int16:
+                numeric[is_blank.to_numpy()] = np.nan
         return numeric.astype(dtype)
     else:
         # numpy.char.strip is ~3.5x faster than pandas .str.strip() here. .tolist()
