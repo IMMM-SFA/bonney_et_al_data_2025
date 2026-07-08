@@ -117,13 +117,6 @@ def _monthly_wide_to_df(filename: str, csv_name: str = None):
     """Reads a WRAP "wide monthly" file (8-char site id, year, 12 monthly values per
     line) into a pandas DataFrame indexed by month, one column per site.
 
-    Shared by `flo_to_df`, `evp_to_df`, `fad_to_df`, and `his_to_df` — all four WRAP
-    input files (.FLO, .EVA, .FAD, .HIS) use this identical layout. The site id is
-    always exactly 8 characters and must be read with a fixed-width slice rather than
-    `line.split()`: some basins (e.g. Trinity, Sabine) right-pad short ids with an
-    internal space after the 2-character record prefix (`"EV EV409"`), which
-    `line.split()` would incorrectly split into two tokens.
-
     Parameters
     ----------
     filename : str
@@ -249,12 +242,6 @@ def his_to_df(filename: str, csv_name: str = None):
 
 def _parse_fixed_width_records(lines, schema, prefix=None):
     """Parses lines against a fixed-width column schema into a DataFrame.
-
-    Shared by `dat_to_df` (WR records, `COL_WATER_RIGHT`) and `cp_to_df` (CP
-    records, `COL_CONTROL_POINT`) — both schemas follow the same convention: a
-    blank field becomes `0` (int columns) or `NaN` (float columns), and a field
-    that is entirely `*` characters (WRAP's overflow marker) becomes `NaN` with a
-    printed warning.
 
     Parameters
     ----------
