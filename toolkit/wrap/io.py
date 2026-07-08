@@ -627,6 +627,110 @@ def out_to_csvs(out_file, csv_folder, csvs_to_write=None):
         print(f'{file_path.stem}_reservoirs.csv')
 
 
+def _fwf_colspecs(cols):
+    """(start, end) character offsets for a list of {"length": ...} column specs."""
+    offsets = np.cumsum([0] + [c["length"] for c in cols])
+    return [(int(offsets[i]), int(offsets[i + 1])) for i in range(len(cols))]
+
+
+def _slice_fixed_width(str_array, colspecs):
+    """Slice fixed-width columns out of a numpy fixed-width unicode array.
+
+    Right-pads with spaces first so that a colspec extending past a row's real
+    content behaves like Python's `line[spot:spot+length]` followed by `.strip()`
+    on a too-short string (returns whatever's left, or '' -- never an error, never
+    garbage). This matters because some WRAP column specs (e.g. COL_FLOW_RIGHTS)
+    declare more width than the file's actual fixed record length provides; the
+    original per-line Python slicing absorbed that silently via .strip().
+    """
+    needed = max(end for _, end in colspecs)
+    maxlen = str_array.dtype.itemsize // 4
+    if needed > maxlen:
+        str_array = np.char.ljust(str_array, needed)
+        maxlen = needed
+    n = len(str_array)
+    buf = str_array.view("U1").reshape(n, maxlen)
+    out = []
+    for start, end in colspecs:
+        sub = buf[:, start:end]
+        if not sub.flags["C_CONTIGUOUS"]:
+            sub = np.ascontiguousarray(sub)
+        out.append(sub.view(f"U{end - start}").reshape(-1))
+    return out
+
+
+def _has_any_star(raw):
+    """Fast presence check for '*' (the overflow sentinel) via the raw char buffer,
+    avoiding a full pandas .str.contains scan when -- as is virtually always the
+    case -- there's nothing to find."""
+    n = len(raw)
+    width = raw.dtype.itemsize // 4
+    buf = raw.view("U1").reshape(n, width)
+    return bool((buf == "*").any())
+
+
+def _overflow_mask(stripped_series):
+    """Rows whose stripped value is non-empty and entirely '*' (WRAP's overflow sentinel)."""
+    lengths = stripped_series.str.len()
+    return (lengths > 0) & (~stripped_series.str.contains(r"[^*]", regex=True))
+
+
+def _cast_fixed_width_column(raw, dtype):
+    """Vectorized equivalent of, per row: value = raw.strip(); dtype(nan) if value
+    is all '*', else dtype(value)."""
+    if dtype is not str:
+        # numpy's string->float parser tolerates surrounding whitespace natively, so
+        # skip strip()/overflow-scan entirely unless something doesn't parse (the
+        # '*'-overflow sentinel, or a genuinely blank field).
+        try:
+            return raw.astype(dtype)
+        except ValueError:
+            pass
+        stripped = pd.Series(np.char.strip(raw))
+        is_overflow = _overflow_mask(stripped)
+        safe = stripped.where(~is_overflow, "0")
+        numeric = safe.to_numpy(dtype=np.float64)
+        if is_overflow.any():
+            numeric = numeric.copy()
+            numeric[is_overflow.to_numpy()] = np.nan
+        return numeric.astype(dtype)
+    else:
+        # numpy.char.strip is ~3.5x faster than pandas .str.strip() here. .tolist()
+        # (rather than .astype(object)) ensures plain Python str elements, matching
+        # the object dtype the original list-of-dicts DataFrame construction produced
+        # -- an array of numpy.str_ gets inferred as pandas' StringDtype instead.
+        stripped = np.char.strip(raw)
+        result = np.array(stripped.tolist(), dtype=object)
+        if _has_any_star(raw):
+            is_overflow = _overflow_mask(pd.Series(stripped))
+            if is_overflow.any():
+                result = result.copy()
+                result[is_overflow.to_numpy()] = "nan"
+        return result
+
+
+def _parse_fixed_width_block(flat_lines, cols, extra_cols=None):
+    """Parse a flat array of fixed-width records into a DataFrame per `cols`.
+
+    extra_cols: [(name, values), ...] inserted before the parsed columns, matching
+    the dict-insertion order of the original per-line loop (year/month for control
+    points and reservoirs; year alone for flow rights).
+    """
+    colspecs = _fwf_colspecs(cols)
+    raw_slices = _slice_fixed_width(flat_lines, colspecs)
+    result = {}
+    if extra_cols:
+        for name, values in extra_cols:
+            result[name] = values
+    for col, raw in zip(cols, raw_slices):
+        if col["name"] == "IF":
+            continue
+        # Duplicate names (COL_DIVERSION_RIGHTS has two "group_identifier" fields)
+        # overwrite in order, matching the original dict's last-value-wins semantics.
+        result[col["name"]] = _cast_fixed_width_column(raw, col["dtype"])
+    return pd.DataFrame(result)
+
+
 def out_to_dfs(out_file, dfs_to_parse=None):
     """Parse a WRAP .OUT file directly to DataFrames without writing to disk.
 
@@ -646,9 +750,6 @@ def out_to_dfs(out_file, dfs_to_parse=None):
     if dfs_to_parse is None:
         dfs_to_parse = ["diversions", "reservoirs"]
 
-    parse_cp = "control_points" in dfs_to_parse
-    parse_res = "reservoirs" in dfs_to_parse
-
     file_path = Path(out_file)
     with open(file_path, "r") as f:
         lines = f.readlines()
@@ -660,64 +761,52 @@ def out_to_dfs(out_file, dfs_to_parse=None):
     n_water_rights = int(meta[3])
     n_reservoirs = int(meta[4])
 
-    data_diversions = []
-    data_flow_rights = []
-    data_control_points = []
-    data_reservoirs = []
-
     block = n_water_rights + n_control_points + n_reservoirs
+    n_months = n_years * 12
 
-    for i_year in np.arange(n_years):
-        for i_month in np.arange(12):
-            n_month = i_year * 12 + i_month
-            base = N_HEADER + n_month * block
-
-            for line in lines[base : base + n_water_rights]:
-                spot = 0
-                datum = {}
-                is_flow_right = line.startswith("IF")
-                if is_flow_right:
-                    datum["year"] = np.int16(start_year + i_year)
-                for col in (COL_FLOW_RIGHTS if is_flow_right else COL_DIVERSION_RIGHTS):
-                    if col["name"] != "IF":
-                        value = line[spot : spot + col["length"]].strip()
-                        if len(value) > 0 and value == len(value) * "*":
-                            value = col["dtype"](np.nan)
-                        else:
-                            value = col["dtype"](value)
-                        datum[col["name"]] = value
-                    spot += col["length"]
-                (data_flow_rights if is_flow_right else data_diversions).append(datum)
-
-            if parse_cp:
-                for line in lines[base + n_water_rights : base + n_water_rights + n_control_points]:
-                    spot = 0
-                    datum = {"year": np.int16(start_year + i_year), "month": np.int16(i_month + 1)}
-                    for col in COL_CONTROL_POINTS:
-                        value = line[spot : spot + col["length"]].strip()
-                        datum[col["name"]] = col["dtype"](np.nan) if (len(value) > 0 and value == len(value) * "*") else col["dtype"](value)
-                        spot += col["length"]
-                    data_control_points.append(datum)
-
-            if parse_res:
-                for line in lines[base + n_water_rights + n_control_points : base + block]:
-                    spot = 0
-                    datum = {"year": np.int16(start_year + i_year), "month": np.int16(i_month + 1)}
-                    for col in COL_RESERVOIR:
-                        value = line[spot : spot + col["length"]].strip()
-                        datum[col["name"]] = col["dtype"](np.nan) if (len(value) > 0 and value == len(value) * "*") else col["dtype"](value)
-                        spot += col["length"]
-                    data_reservoirs.append(datum)
+    arr = np.asarray(lines[N_HEADER : N_HEADER + n_months * block]).reshape(n_months, block)
+    water_rights_flat = arr[:, :n_water_rights].ravel()
+    control_points_flat = arr[:, n_water_rights : n_water_rights + n_control_points].ravel()
+    reservoirs_flat = arr[:, n_water_rights + n_control_points : block].ravel()
 
     result = {}
-    if "diversions" in dfs_to_parse:
-        result["diversions"] = pd.DataFrame(data_diversions)
-    if "flow_rights" in dfs_to_parse:
-        result["flow_rights"] = pd.DataFrame(data_flow_rights)
-    if parse_cp:
-        result["control_points"] = pd.DataFrame(data_control_points)
-    if parse_res:
-        result["reservoirs"] = pd.DataFrame(data_reservoirs)
+
+    if ("diversions" in dfs_to_parse) or ("flow_rights" in dfs_to_parse):
+        n = len(water_rights_flat)
+        maxlen = water_rights_flat.dtype.itemsize // 4
+        buf = water_rights_flat.view("U1").reshape(n, maxlen)
+        prefix = buf[:, 0:2]
+        if not prefix.flags["C_CONTIGUOUS"]:
+            prefix = np.ascontiguousarray(prefix)
+        prefix = prefix.view("U2").reshape(-1)
+        is_flow_right = prefix == "IF"
+
+        if "diversions" in dfs_to_parse:
+            diversion_lines = water_rights_flat[~is_flow_right]
+            result["diversions"] = _parse_fixed_width_block(diversion_lines, COL_DIVERSION_RIGHTS)
+
+        if "flow_rights" in dfs_to_parse:
+            year_broadcast = np.repeat(start_year + np.repeat(np.arange(n_years), 12), n_water_rights)
+            flowright_lines = water_rights_flat[is_flow_right]
+            flowright_years = year_broadcast[is_flow_right].astype(np.int16)
+            result["flow_rights"] = _parse_fixed_width_block(
+                flowright_lines, COL_FLOW_RIGHTS, extra_cols=[("year", flowright_years)]
+            )
+
+    if "control_points" in dfs_to_parse:
+        year_arr = (start_year + np.repeat(np.arange(n_years), 12 * n_control_points)).astype(np.int16)
+        month_arr = np.tile(np.repeat(np.arange(1, 13), n_control_points), n_years).astype(np.int16)
+        result["control_points"] = _parse_fixed_width_block(
+            control_points_flat, COL_CONTROL_POINTS, extra_cols=[("year", year_arr), ("month", month_arr)]
+        )
+
+    if "reservoirs" in dfs_to_parse:
+        year_arr = (start_year + np.repeat(np.arange(n_years), 12 * n_reservoirs)).astype(np.int16)
+        month_arr = np.tile(np.repeat(np.arange(1, 13), n_reservoirs), n_years).astype(np.int16)
+        result["reservoirs"] = _parse_fixed_width_block(
+            reservoirs_flat, COL_RESERVOIR, extra_cols=[("year", year_arr), ("month", month_arr)]
+        )
+
     return result
 
 
