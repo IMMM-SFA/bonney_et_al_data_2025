@@ -11,7 +11,7 @@ Kirk Bonney<sup>1\*</sup>, Nicole D. Jackson<sup>1</sup>, Stephen Ferencz<sup>2<
 This metarepo contains the utilities and scripts used to generate a dataset of synthetic streamflows and corresponding water management outputs from the Water Rights Analysis Package (WRAP). The purpose of this repository is to provide the means to reproduce this dataset as well as to document the process by which the dataset was generated.
 
 ## Code reference
-TODO
+Bonney, K., Jackson, N. D., Ferencz, S., Bracken, C., Gunda, T., & Valdez, R. (2026). bonney_et_al_data_2025 (1.0.0). Zenodo. https://doi.org/10.5281/zenodo.21268463
 
 ## Data reference
 | Dataset                                                                          | Link                                                                                          | DOI              |

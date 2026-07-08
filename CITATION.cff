@@ -2,9 +2,15 @@ cff-version: 1.2.0
 message: "If you use this software, please cite it as below."
 type: software
 title: "bonney_et_al_data_2025"
+version: 1.0.0
+date-released: "2026-07-08"
 abstract: "Utilities and scripts used to generate a dataset of synthetic streamflows and corresponding water management outputs from the Water Rights Analysis Package (WRAP)."
 url: "https://github.com/IMMM-SFA/bonney_et_al_data_2025"
 license: BSD-2-Clause
+identifiers:
+  - type: doi
+    value: "10.5281/zenodo.21268463"
+    description: "Archived snapshot of version 1.0.0"
 authors:
   - family-names: Bonney
     given-names: Kirk
