@@ -13,7 +13,7 @@ from pathlib import Path
 from toolkit import repo_data_path
 from toolkit.wrap.io import df_to_flo, out_to_dfs, flo_to_df
 from toolkit.wrap.wraputils import fix_cols
-from toolkit.emulator.processing import process_diversion_csv, process_reservoir_csv
+from toolkit.wrap.processing import process_diversion_csv, process_reservoir_csv
 from tests.regression._paths import BASIN_NAME, FLO_FILE
 from tests.regression._helpers import DIVERSION_COLUMNS, RESERVOIR_COLUMNS
 

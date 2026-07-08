@@ -3,7 +3,7 @@ import pandas as pd
 from pathlib import Path
 from toolkit.wrap.io import out_to_dfs, df_to_flo, flo_to_df
 from toolkit.wrap.eva import generate_eva_df
-from toolkit.emulator.processing import process_diversion_csv, process_reservoir_csv
+from toolkit.wrap.processing import process_diversion_csv, process_reservoir_csv
 
 
 def clean_folders(
