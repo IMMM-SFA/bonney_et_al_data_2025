@@ -1,1 +1,33 @@
-
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+type: software
+title: "bonney_et_al_data_2025"
+abstract: "Utilities and scripts used to generate a dataset of synthetic streamflows and corresponding water management outputs from the Water Rights Analysis Package (WRAP)."
+url: "https://github.com/IMMM-SFA/bonney_et_al_data_2025"
+license: BSD-2-Clause
+authors:
+  - family-names: Bonney
+    given-names: Kirk
+    affiliation: Sandia National Laboratories
+    email: klbonne@sandia.gov
+    orcid: "https://orcid.org/0009-0006-2383-1634"
+  - family-names: Jackson
+    given-names: Nicole D.
+    affiliation: Sandia National Laboratories
+    orcid: "https://orcid.org/0000-0002-3814-9906"
+  - family-names: Ferencz
+    given-names: Stephen
+    affiliation: Pacific Northwest National Laboratory
+    orcid: "https://orcid.org/0000-0002-2953-8440"
+  - family-names: Bracken
+    given-names: Cameron
+    affiliation: Pacific Northwest National Laboratory
+    orcid: "https://orcid.org/0000-0003-1917-402X"
+  - family-names: Gunda
+    given-names: Thushara
+    affiliation: Sandia National Laboratories
+    orcid: "https://orcid.org/0000-0003-1945-4064"
+  - family-names: Valdez
+    given-names: Raquel
+    affiliation: Sandia National Laboratories
+    orcid: "https://orcid.org/0009-0003-4840-0847"
