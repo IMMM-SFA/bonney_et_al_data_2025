@@ -25,7 +25,7 @@ For each pair of basin and subset (21 total), the following is performed:
 3. The streamflow realizations are simulated in WRAP to obtain water management outputs.
 4. The streamflow realizations and water management outputs are bundled into a single NetCDF.
 
-The core files of this archive are the 21 NetCDF files generated from this process. They are organized into the following file structure TODO. In addition to the core files, there is a `data` folder which contains the data necessary for reproducing the dataset. The details of these two parts of the archive are provided below
+The core files of this archive are the 21 NetCDF files generated from this process. They are named according to the convention `{9505_subset}_{basin}_synthetic_dataset.nc`, detailed further in the NetCDF File Structure section below. In addition to the core files, there is a `data` folder which contains the data necessary for reproducing the dataset. The details of these two parts of the archive are provided below
 
 
 ## NetCDF File Structure
