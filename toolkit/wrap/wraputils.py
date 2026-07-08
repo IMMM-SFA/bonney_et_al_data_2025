@@ -1,7 +1,8 @@
 import os
 import pandas as pd
 from pathlib import Path
-from toolkit.wrap.io import out_to_dfs, df_to_flo
+from toolkit.wrap.io import out_to_dfs, df_to_flo, flo_to_df
+from toolkit.wrap.eva import generate_eva_df
 from toolkit.emulator.processing import process_diversion_csv, process_reservoir_csv
 
 
@@ -52,6 +53,9 @@ def wrap_pipeline(
     diversions_csvs_path,
     reservoirs_csvs_path,
     synthetic_flo_output_path,
+    historical_eva_df,
+    historical_flow_df,
+    basin_config,
 ):
     """For each FLO file: run WRAP via slot, process the OUT file into CSVs, and clean up.
 
@@ -61,11 +65,19 @@ def wrap_pipeline(
         Pre-setup execution slot for this worker process.
     flo_files : list[str]
         FLO file names (not full paths) to process sequentially in this slot.
+    historical_eva_df : DataFrame
+        Historical net evaporation per EVA site, from evp_to_df.
+    historical_flow_df : DataFrame
+        Historical flow per control point, from flo_to_df.
+    basin_config : dict
+        basins.json entry for this basin, including "reservoir_anchors".
     """
     count = 0
     for flo_file in flo_files:
         flo_path = Path(synthetic_flo_output_path) / flo_file
-        flo_name = slot.run(flo_path)
+        synthetic_flow_df = flo_to_df(str(flo_path))
+        eva_df = generate_eva_df(synthetic_flow_df, historical_eva_df, historical_flow_df, basin_config)
+        flo_name = slot.run(flo_path, eva_df=eva_df)
 
         out_file = slot.slot_dir / f"{flo_name}.OUT"
         mss_file = slot.slot_dir / f"{flo_name}.MSS"
