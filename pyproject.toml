@@ -6,7 +6,7 @@ build-backend = "hatchling.build"
 name = "toolkit"
 description = "Supporting functions for repository analysis"
 readme = "README.md"
-version = "0.0.1"
+version = "1.0.0"
 authors = [
   { name = "Kirk Bonney", email = "klbonne@sandia.gov" },
 ]
