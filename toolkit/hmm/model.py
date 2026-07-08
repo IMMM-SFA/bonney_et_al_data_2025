@@ -437,55 +437,6 @@ class BayesianStreamflowHMM:
         """
         plot_results(self.idata, data, states, self.n_states, output_dir)
 
-    def plot_synthetic_comparison(
-        self,
-        historical_data: np.ndarray,
-        ensemble_data: np.ndarray,
-        n_years: int,
-        n_samples: int = 5,
-        output_dir: Optional[Path] = None
-    ) -> None:
-        """
-        Plot comparison between historical, ensemble, and synthetic data.
-       
-        Parameters
-        ----------
-        historical_data : np.ndarray
-            Historical streamflow data
-        ensemble_data : np.ndarray
-            Ensemble streamflow data
-        n_years : int
-            Number of years to plot
-        n_samples : int, default=5
-            Number of synthetic samples to generate
-        output_dir : Optional[Path], default=None
-            Directory to save plots. If None, plots are displayed.
-        """
-        logger.info("Generating synthetic comparison...")
-        if self.idata is None:
-            raise ValueError("Model must be fit before generating synthetic data")
-           
-        # Generate synthetic data
-        synthetic = self.generate_annual_streamflow(
-            n_years=n_years,
-        )
-       
-        # Get states for synthetic data
-        synthetic_states = np.zeros((n_samples, n_years), dtype=int)
-        for i in range(n_samples):
-            synthetic_states[i] = self.predict_states(synthetic[i:i+1])[0]
-       
-        plot_synthetic_comparison(
-            self.idata,
-            historical_data,
-            ensemble_data,
-            synthetic,
-            synthetic_states,
-            n_years,
-            n_samples,
-            output_dir=output_dir
-        )
-
     def plot_diagnostics(self, output_dir: Optional[Path] = None) -> None:
         """
         Generate comprehensive diagnostic plots for the fitted model.
