@@ -3,6 +3,8 @@ from typing import Optional
 import numpy as np
 import pandas as pd
 
+from toolkit.utils.disaggregation import Disaggregator
+
 
 def disaggregate_annual_to_monthly(
     annual_values: np.ndarray,
@@ -21,6 +23,11 @@ def disaggregate_annual_to_monthly(
     The anchor site does not need to be an outlet/outflow gage - any site whose annual pattern
     is a representative proxy for the others can be used (e.g. a reservoir's correlated control
     point).
+
+    Thin numpy-array-in/numpy-array-out wrapper around `toolkit.utils.disaggregation.Disaggregator`:
+    the anchor's own temporal disaggregation is `stamp_temporal_rescale`, and every site
+    (including the anchor itself, whose ratio-to-itself is exactly 1) is disaggregated via
+    `stamp_ratio` against the anchor's already-computed synthetic monthly values.
 
     Parameters
     ----------
@@ -43,56 +50,20 @@ def disaggregate_annual_to_monthly(
 
     num_years = len(annual_values)
     hist_years = int(historical_monthly_data.shape[0] / 12)
-    hist_monthly = historical_monthly_data.reshape(hist_years, 12, -1)
-    num_sites = hist_monthly.shape[2]
+    num_sites = historical_monthly_data.shape[1]
 
-    # Anchor site historical data
-    anchor_hist_monthly = hist_monthly[:, :, anchor_index]
-    anchor_hist_annual = np.sum(anchor_hist_monthly, axis=1)
+    site_names = [f"site_{i}" for i in range(num_sites)]
+    hist_index = pd.date_range("1900-01", periods=hist_years * 12, freq="MS")
+    historical_df = pd.DataFrame(historical_monthly_data, index=hist_index, columns=site_names)
 
-    # Distance between synthetic and historical annual values at the anchor site
-    annual_distances = np.abs(np.subtract.outer(annual_values, anchor_hist_annual))
+    synth_years = np.arange(2000, 2000 + num_years)
+    target_index = pd.date_range("2000-01", periods=num_years * 12, freq="MS")
+    driver_synthetic_annual = pd.Series(annual_values, index=synth_years)
 
-    # Spatial ratios: each site relative to the anchor site
-    site_ratios = np.zeros(hist_monthly.shape)
-    for i in range(num_sites):
-        site_ratios[:, :, i] = hist_monthly[:, :, i] / anchor_hist_monthly
+    disaggregator = Disaggregator(historical_df[site_names[anchor_index]], rng=rng)
+    analog_years = disaggregator.select_analog_years(driver_synthetic_annual)
 
-    # Temporal breakdown: anchor monthly relative to anchor annual
-    anchor_temporal_breakdown = np.zeros((hist_years, 12))
-    for i in range(hist_years):
-        anchor_temporal_breakdown[i, :] = anchor_hist_monthly[i, :] / anchor_hist_annual[i]
-
-    # Neighbor selection probabilities (inverse rank weighting)
-    k = int(np.sqrt(hist_years))
-    neighbor_probabilities = np.array([1 / (j + 1) for j in range(k)])
-    neighbor_probabilities = neighbor_probabilities / np.sum(neighbor_probabilities)
-
-    synth_monthly = np.zeros((num_years, 12, num_sites))
-    for j in range(num_years):
-        # k nearest neighbors by anchor annual distance
-        indices = np.argsort(annual_distances[j])[:k]
-        neighbor_idx = rng.choice(indices, p=neighbor_probabilities)
-
-        # Disaggregate anchor site temporally
-        synth_monthly[j, :, anchor_index] = (
-            anchor_temporal_breakdown[neighbor_idx, :] * annual_values[j]
-        )
-
-        # Disaggregate all sites spatially relative to the anchor
-        for n in range(12):
-            synth_monthly[j, n, :] = (
-                site_ratios[neighbor_idx, n, :] * synth_monthly[j, n, anchor_index]
-            )
-
-    synth_monthly = synth_monthly.reshape(num_years * 12, num_sites)
-
-    start = "2000-01"
-    end = str(2000 + num_years - 1) + "-12"
-    time_range = pd.date_range(start=start, end=end, freq="MS")
-
-    return pd.DataFrame(
-        synth_monthly,
-        index=time_range,
-        columns=[f"site_{i}" for i in range(num_sites)],
+    anchor_synthetic_monthly = disaggregator.stamp_temporal_rescale(
+        analog_years, driver_synthetic_annual, target_index
     )
+    return disaggregator.stamp_ratio(historical_df, analog_years, anchor_synthetic_monthly)
