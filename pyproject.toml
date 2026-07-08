@@ -16,7 +16,7 @@ maintainers = [
 requires-python = ">=3.8"
 
 dependencies = [
-      "numpy", 
+      "numpy",
       "pandas",
       "xarray",
       "matplotlib",
@@ -30,6 +30,8 @@ dependencies = [
       "scipy",
       "pysal",
       "esda",
+      "geopandas",
+      "shapely",
     ]
 
 classifiers = [
