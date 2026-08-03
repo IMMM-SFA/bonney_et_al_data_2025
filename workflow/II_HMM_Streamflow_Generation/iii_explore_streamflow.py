@@ -164,8 +164,7 @@ def explore_streamflow(basin_name, basin, filter_name):
     annual_streamflow_path = plot_dir / f"{filter_name}_{basin_name.lower()}_annual_streamflow.png"
     plot_annual_streamflow_with_historical(synthetic_data, hist_monthly, gage_name, basin_name, filter_name, annual_streamflow_path)
 
-    # 4. Drought/validation metrics (driest-N, flashiness, drought duration) for the outflow
-    # gage: ensemble distribution vs. the historical record.
+    # 4. Drought/validation metrics for the outflow gage: ensemble vs. historical record
     gage_index = list(site_names).index(gage_name)
     n_realizations, n_months = streamflow.shape[0], streamflow.shape[1]
     n_years = n_months // 12

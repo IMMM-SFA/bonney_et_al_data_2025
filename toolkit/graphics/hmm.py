@@ -749,19 +749,8 @@ def plot_comparison(
 
 
 def plot_drought_metrics(metrics_df: pd.DataFrame, historical_metrics: dict, output_dir: Path) -> None:
-    """
-    Violin plots comparing an ensemble's drought/validation metrics against the historical
-    record, for the metrics produced by `toolkit.hmm.metrics.compute_drought_metrics_ensemble`.
-
-    Parameters
-    ----------
-    metrics_df : pd.DataFrame
-        One row per realization, columns = metric names.
-    historical_metrics : dict
-        The same metrics computed for the historical record.
-    output_dir : Path
-        Directory to save plots.
-    """
+    """Violin plots of an ensemble's drought/validation metrics vs. the historical record
+    (see `toolkit.hmm.metrics.compute_drought_metrics_ensemble`)."""
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 

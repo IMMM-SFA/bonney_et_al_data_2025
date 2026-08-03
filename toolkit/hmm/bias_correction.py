@@ -11,8 +11,7 @@ def delta_scaling(hist_annual: np.ndarray, synth_annual: np.ndarray) -> np.ndarr
 
 
 def variance_scaling(hist_annual: np.ndarray, synth_annual: np.ndarray) -> np.ndarray:
-    """Rescale ensemble anomalies (around the ensemble mean) to match historical variance.
-    """
+    """Rescale ensemble anomalies around the ensemble mean to match historical variance."""
     mu_hist = np.mean(hist_annual)
     mu_ens = np.mean(synth_annual)
     sigma_hist = np.std(hist_annual, ddof=1)
@@ -41,8 +40,7 @@ def log_variance_scaling(hist_annual: np.ndarray, synth_annual: np.ndarray) -> n
 
 
 def empirical_quantile_mapping(hist_annual: np.ndarray, synth_annual: np.ndarray) -> np.ndarray:
-    """Map the whole ensemble's CDF onto the historical record's CDF (rank-for-rank, lumped
-    across all realizations -- does not preserve any individual realization's own ranking)."""
+    """Map the whole ensemble's CDF onto the historical CDF, lumped across realizations."""
     synth_annual = np.asarray(synth_annual)
     flat_synth = synth_annual.flatten()
 
@@ -54,8 +52,7 @@ def empirical_quantile_mapping(hist_annual: np.ndarray, synth_annual: np.ndarray
 
 
 def individual_quantile_mapping(hist_annual: np.ndarray, synth_annual: np.ndarray) -> np.ndarray:
-    """Map each realization's own within-trajectory rank onto the historical record's sorted
-    values, preserving each realization's internal wet/dry year ordering."""
+    """Map each realization's own rank onto the historical sorted values, preserving order."""
     synth_annual = np.asarray(synth_annual)
     sorted_hist = np.sort(np.asarray(hist_annual, dtype=float))
     percentile_grid = np.linspace(0, 100, len(sorted_hist))
@@ -69,9 +66,7 @@ def individual_quantile_mapping(hist_annual: np.ndarray, synth_annual: np.ndarra
 
 
 def _stretch_historical_tails(hist_annual: np.ndarray, factor: float, tail_method: str) -> np.ndarray:
-    """Artificially exaggerate the historical record's dry and/or wet tails, to give
-    quantile mapping a wider range of single-year extremes than the observed record alone.
-    """
+    """Exaggerate the historical record's tails, for wider extremes than observed alone."""
     sorted_hist = np.sort(np.asarray(hist_annual, dtype=float))
     if tail_method == "A":
         sorted_hist[0] *= (1.0 - factor)
@@ -91,9 +86,7 @@ def stretched_quantile_mapping(
     factor: float = 0.2,
     tail_method: str = "C",
 ) -> np.ndarray:
-    """Empirical quantile mapping (lumped, as in `empirical_quantile_mapping`) against a
-    historical record whose tails have been artificially stretched (`_stretch_historical_tails`).
-    """
+    """Empirical quantile mapping against a tail-stretched historical record."""
     stretched_hist = _stretch_historical_tails(hist_annual, factor=factor, tail_method=tail_method)
     return empirical_quantile_mapping(stretched_hist, synth_annual)
 
@@ -114,8 +107,7 @@ def apply_bias_correction(
     synth_annual: np.ndarray,
     **kwargs,
 ) -> np.ndarray:
-    """Dispatch to one of the bias correction methods above by name. `method=None` is a
-    no-op passthrough, so this can always be called unconditionally."""
+    """Dispatch to a named bias correction method; `method=None` is a no-op passthrough."""
     if method is None:
         return synth_annual
     if method not in _METHODS:

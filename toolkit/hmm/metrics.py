@@ -12,8 +12,7 @@ def driest_n_year_mean(annual: np.ndarray, n: int) -> float:
 
 
 def flashiness(annual: np.ndarray) -> int:
-    """Count of transitions between the driest quartile (<=25th pct of the series) and the
-    wettest quartile (>=75th pct), in either direction."""
+    """Count of transitions between the series' driest and wettest quartiles."""
     annual = np.asarray(annual, dtype=float)
     q25, q75 = np.percentile(annual, [25, 75])
     state = np.where(annual <= q25, -1, np.where(annual >= q75, 1, 0))
@@ -43,8 +42,7 @@ def drought_duration_stats(annual: np.ndarray, drought_threshold: float) -> tupl
 
 
 def decadal_variability(annual: np.ndarray, window: int = 10) -> float:
-    """Std deviation of rolling `window`-year means -- how much multi-decadal wet/dry
-    epochs vary in the series."""
+    """Std deviation of rolling `window`-year means."""
     annual = np.asarray(annual, dtype=float)
     rolling = np.convolve(annual, np.ones(window) / window, mode="valid")
     return float(np.std(rolling))

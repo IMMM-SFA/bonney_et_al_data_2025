@@ -9,7 +9,7 @@ import json
 import argparse
 
 from toolkit.hmm.model import BayesianStreamflowHMM
-from toolkit.data.ninetyfiveofive import load_historical_data, load_9505_stencil_pool
+from toolkit.data.ninetyfiveofive import load_9505_stencil_pool
 from toolkit.utils.random_seeds import set_random_seeds, get_seed
 from toolkit.utils.fixed_control_points import split_free_and_fixed, splice_fixed_columns
 from toolkit import repo_data_path, outputs_path
@@ -22,24 +22,17 @@ FORCE_RECOMPUTE = True # Whether to recompute the synthetic streamflow if it alr
 LOG_TRANSFORM = True # Whether to log transform the data
 N_ENSEMBLES = 1000 # Number of ensembles to generate
 
-# Which candidate "stencil" pool disaggregation draws monthly shapes from:
-#   "historical" - the single observed historical FLO record only (default, matches prior behavior)
-#   "9505"       - the DOE 9505 ensemble only, filtered to this basin's HMM training filter
-#   "blend"      - historical FLO blocks + 9505 blocks pooled together
+# Disaggregation stencil source: "historical" (default), "9505", or "blend"
 STENCIL_SOURCE = "historical"
-# Which 9505 period(s) (keys of NINETYFIVEOFIVE_NC_PATHS below) to pool stencils from when
-# STENCIL_SOURCE is "9505" or "blend". Multiple periods pool their candidate blocks together.
+# 9505 period(s) (keys of NINETYFIVEOFIVE_NC_PATHS) to pool when STENCIL_SOURCE != "historical"
 STENCIL_PERIODS = ["2020_2059"]
 
-# Post-hoc bias correction of the BHMM's raw annual outlet streamflow against the historical
-# annual record, applied before disaggregation to monthly (see toolkit.hmm.bias_correction).
-# None (default) reproduces prior behavior exactly -- no correction applied.
+# Bias correction method from toolkit.hmm.bias_correction; None reproduces prior behavior
 BIAS_CORRECTION_METHOD = None
 BIAS_CORRECTION_KWARGS = {}
 
 ### Path Configuration ###
 basins_path = repo_data_path / "configs" / "basins.json"
-# ensemble_filters_path = repo_data_path / "configs" / "ensemble_filters_basic.json"
 ensemble_filters_path = repo_data_path / "configs" / "ensemble_filters.json"
 
 output_dir = outputs_path / "bayesian_hmm"
@@ -57,48 +50,25 @@ def generate_synthetic_streamflow(basin_name, basin, ensemble_filters, filter_na
     
     gage_name = basin["gage_name"]
     reach_id = basin["reach_id"]
-    
-    # Flo file
     flo_file = repo_data_path / basin["flo_file"]
-    
-    # Model path
     model_path = output_dir / f"{filter_name}" / f"{basin_name.lower()}" / f"{basin_name}_{filter_name}_model"
-    
-    # Check if model exists
+
     if not (model_path.with_suffix(".nc")).exists():
         print(f"Model not found at {model_path}. Please run the training script first.")
         return
 
-    # Load historical data for disaggregation
-    # hist_data, hist_metadata = load_historical_data(
-    #     flo_file=flo_file,
-    #     gage_name=gage_name,
-    #     reach_id=reach_id,
-    #     aggregate_annually=True,
-    #     log1p_transform=LOG_TRANSFORM
-    # )
-    
-    # Historical monthly for disaggregation
     hist_monthly = flo_to_df(str(flo_file))
     site_names = hist_monthly.columns.tolist()
 
-    # fixed_control_points (basins.json) are held constant at their historical values --
-    # out-of-basin gages or non-hydrologic placeholder CPs with no real streamflow to
-    # synthesize (see toolkit.utils.fixed_control_points). Excluded entirely from HMM
-    # disaggregation/stencil-pool construction below, then spliced back in after generation.
+    # Fixed CPs (basins.json) are excluded from disaggregation entirely and spliced back in
+    # after generation -- see toolkit.utils.fixed_control_points.
     free_sites, fixed_sites = split_free_and_fixed(site_names, basin)
     hist_monthly_free = hist_monthly[free_sites]
 
     outflow_index = free_sites.index(gage_name)
     num_years = len(hist_monthly) // 12
-
-    # Historical annual outlet streamflow, used as the bias-correction reference when
-    # BIAS_CORRECTION_METHOD is set.
     historical_annual = hist_monthly[gage_name].resample("YS").sum().to_numpy()
 
-    # Build the disaggregation stencil pool. "historical" reproduces prior behavior exactly;
-    # "9505"/"blend" pull additional candidate monthly shapes from the DOE 9505 ensemble,
-    # filtered to the same ensemble_filters this basin's HMM was trained on.
     if STENCIL_SOURCE == "historical":
         stencil_pool = hist_monthly_free.values
     else:
@@ -145,8 +115,6 @@ def generate_synthetic_streamflow(basin_name, basin, ensemble_filters, filter_na
             bias_correction_kwargs=BIAS_CORRECTION_KWARGS,
         )
 
-        # Splice fixed_control_points' historical values back in and restore the full,
-        # original column order (generation above only produced the free sites).
         if fixed_sites:
             synthetic_streamflow_dict['streamflow'] = splice_fixed_columns(
                 synthetic_streamflow_dict['streamflow'],
@@ -157,8 +125,6 @@ def generate_synthetic_streamflow(basin_name, basin, ensemble_filters, filter_na
             )
             synthetic_streamflow_dict['streamflow_columns'] = site_names
 
-        # Save synthetic streamflow to netcdf
-        # Convert ensemble_filters to NetCDF-compatible format (remove None values)
         netcdf_filters = {k: v for k, v in ensemble_filters.items() if v is not None}
         
         global_metadata = {
@@ -173,21 +139,17 @@ def generate_synthetic_streamflow(basin_name, basin, ensemble_filters, filter_na
 ### Main ###
 
 def main():
-    # Parse command line arguments
     parser = argparse.ArgumentParser(description='Generate synthetic streamflow for specific filter-basin combinations')
     parser.add_argument('--filter', help='Filter name to process (e.g., basic, cooler, hotter)')
     parser.add_argument('--basin', help='Basin name to process (e.g., Colorado, Trinity, Brazos)')
     args = parser.parse_args()
-    
-    # Load basin configuration from JSON
+
     with open(basins_path, "r") as f:
         BASINS = json.load(f)
 
-    # Load ensemble filters configuration from JSON
     with open(ensemble_filters_path, "r") as f:
         ENSEMBLE_CONFIG = json.load(f)
 
-    # Filter processing based on arguments
     if args.filter:
         filter_sets = [fs for fs in ENSEMBLE_CONFIG if fs["name"] == args.filter]
         if not filter_sets:
@@ -204,7 +166,6 @@ def main():
     else:
         basins = BASINS
 
-    # Process selected combinations
     for filter_set in filter_sets:
         filter_name = filter_set["name"]
         ensemble_filters = filter_set["filters"]

@@ -105,13 +105,8 @@ def wrap_pipeline(
 
 
 def process_ensemble_member(args):
-    """Worker function to process a single ensemble member.
-
-    fixed_control_points (out-of-basin gages, placeholder CPs) are already correct in
-    `streamflow` -- Stage II (ii_generate_synthetic_streamflow.py) splices them in at
-    generation time via toolkit.utils.fixed_control_points, so there's nothing left to fix
-    up here.
-    """
+    """Write one ensemble member's streamflow to a .FLO file. fixed_control_points are
+    already correct in `streamflow` -- spliced in at generation time (Stage II)."""
     ens, streamflow, streamflow_index, streamflow_columns, synthetic_flo_output_path = args
 
     data = streamflow[ens, :, :]

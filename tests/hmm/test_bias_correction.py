@@ -24,9 +24,8 @@ def test_delta_scaling_matches_historical_mean(rng):
 
 
 def test_variance_scaling_matches_historical_variance_when_uncapped(rng):
-    # Anomalies kept modest relative to the historical mean so the dry-side dampening
-    # cap never actually binds -- both branches use the same ratio, so the corrected
-    # ensemble's overall std should closely match the historical std.
+    # Anomalies kept modest so the dry-side dampening cap never binds -- both branches use
+    # the same ratio, so corrected std should closely match historical std.
     hist = rng.normal(1000, 200, size=60)
     synth = rng.normal(1000, 50, size=(50, 40))
 

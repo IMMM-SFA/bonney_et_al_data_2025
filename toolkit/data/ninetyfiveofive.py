@@ -227,24 +227,8 @@ def load_doe_data(
 
 
 def _map_sites_to_reach_vars(site_names: List[str], pcp_reach_mapping: pd.DataFrame) -> List[str]:
-    """Map FLO control-point names to their 9505 `reach_<COMID>` variable names.
-
-    Whitespace-insensitive: FLO columns pad site codes to a fixed width (e.g. Trinity's
-    "IN 8BEMA", Sabine's "IN  BARP"), while `pcp_to_reach_mapping.csv`'s PCP_NAME column
-    does not, so both sides are compared with whitespace stripped.
-
-    Parameters
-    ----------
-    site_names : List[str]
-        Basin FLO column names, in the order the caller wants the output columns.
-    pcp_reach_mapping : pd.DataFrame
-        `outputs/9505/pcp_to_reach_mapping.csv`, with PCP_NAME and REACH_COMID columns.
-
-    Returns
-    -------
-    List[str]
-        `reach_<COMID>` variable name for each entry in `site_names`, same order.
-    """
+    """Map FLO control-point names to 9505 `reach_<COMID>` variable names, whitespace-insensitive
+    (FLO pads site codes to a fixed width, e.g. Trinity's "IN 8BEMA"; PCP_NAME doesn't)."""
     stripped_to_comid = {
         str(name).replace(" ", ""): comid
         for name, comid in zip(pcp_reach_mapping["PCP_NAME"], pcp_reach_mapping["REACH_COMID"])
@@ -265,37 +249,13 @@ def load_9505_stencil_pool(
     periods: List[str],
     ensemble_filters: Optional[Dict[str, Any]] = None,
 ) -> np.ndarray:
-    """Build a monthly candidate "stencil" pool from the DOE 9505 ensemble, for use as
-    `historical_monthly_data` in `toolkit.hmm.disaggregation.disaggregate_annual_to_monthly`.
-
-    Each 9505 (ensemble member, year) pair becomes one 12-month candidate block, so the pool
-    can be far larger than the single observed historical record `disaggregate_annual_to_monthly`
-    otherwise draws from -- but the block layout is identical (`(n_blocks*12, n_sites)`), since
-    that function already treats its input as an arbitrary stack of 12-month blocks rather than
-    one contiguous historical series (it fabricates its own sequential year index internally).
-    To blend with the observed historical record, concatenate this function's output with the
-    historical FLO array along axis 0 before passing it on.
-
-    Parameters
-    ----------
-    site_names : List[str]
-        Basin FLO column names (e.g. `flo_to_df(...).columns.tolist()`), in the exact order the
-        output columns must match so callers' `anchor_index`/`outflow_index` stay valid.
-    pcp_reach_mapping : pd.DataFrame
-        `outputs/9505/pcp_to_reach_mapping.csv`, with PCP_NAME and REACH_COMID columns.
-    nc_paths : Dict[str, Path]
-        Period name -> path to that period's `master_streamflow_{period}_af.nc` (already in
-        acre-feet/month, matching `.FLO` file units).
-    periods : List[str]
-        Which period(s) (keys into `nc_paths`) to pool candidate blocks from.
-    ensemble_filters : Optional[Dict[str, Any]], default=None
-        Same filter dict used to train the basin's HMM (`toolkit.data.metadata.filter_ensemble_members`),
-        so stencils are drawn from the same ensemble-member subset the annual model was trained on.
-
-    Returns
-    -------
-    np.ndarray
-        Shape (n_candidate_blocks * 12, n_sites), columns ordered to match `site_names`.
+    """Build a `(n_candidate_blocks*12, n_sites)` monthly stencil pool from the DOE 9505
+    ensemble, for use as `historical_monthly_data` in
+    `toolkit.hmm.disaggregation.disaggregate_annual_to_monthly` -- one candidate block per
+    (ensemble member, year), columns ordered to match `site_names`. That function already
+    treats its input as an arbitrary stack of 12-month blocks (it fabricates its own
+    sequential year index), so this can be concatenated with a historical FLO array to blend
+    sources. `ensemble_filters` should match whatever filtered the basin's HMM training data.
     """
     reach_vars = _map_sites_to_reach_vars(site_names, pcp_reach_mapping)
 

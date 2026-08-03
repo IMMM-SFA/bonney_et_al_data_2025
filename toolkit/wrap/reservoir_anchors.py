@@ -4,12 +4,8 @@ from toolkit import repo_data_path
 
 
 def resolve_eva_flo_paths(basin_config: dict):
-    """Derive (eva_path, flo_path) for a basin from its basins.json entry.
-
-    flo_file's exact case is trusted as given; the sibling .eva file is found by
-    case-insensitive suffix match in the same directory, since basin WAM directories mix
-    filename casing (e.g. Trinity's Trin3.eva vs trin3.dat).
-    """
+    """Derive (eva_path, flo_path) for a basin. The sibling .eva file is matched
+    case-insensitively, since WAM dirs mix filename casing (e.g. Trinity's Trin3.eva vs trin3.dat)."""
     flo_path = repo_data_path / basin_config["flo_file"]
     basin_dir = flo_path.parent
     matches = [p for p in basin_dir.iterdir() if p.suffix.lower() == ".eva"]
@@ -23,8 +19,7 @@ def annualize(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def compute_annual_raw_correlations(eva_df: pd.DataFrame, flo_df: pd.DataFrame) -> pd.DataFrame:
-    """Pearson r between every EVA site and every CP, on annual (untransformed) sums.
-    Shape (n_eva_sites, n_cps)."""
+    """Pearson r between every EVA site and every CP on annual sums; shape (n_eva_sites, n_cps)."""
     eva_annual = annualize(eva_df)
     flo_annual = annualize(flo_df)
     common_index = eva_annual.index.intersection(flo_annual.index)

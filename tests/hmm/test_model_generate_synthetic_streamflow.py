@@ -1,13 +1,5 @@
-"""
-Tests that BayesianStreamflowHMM.generate_synthetic_streamflow's synthetic horizon is driven
-by its explicit `num_years` parameter, independent of how many candidate blocks are in the
-`historical_monthly_data` stencil pool.
-
-`num_years` used to be silently derived from `historical_monthly_data.shape[0] // 12` -- fine
-when the stencil pool was one historical record sized close to the desired synthetic horizon,
-but wrong once the pool is a much larger multi-realization candidate set (see
-toolkit.data.ninetyfiveofive.load_9505_stencil_pool).
-"""
+"""Tests for BayesianStreamflowHMM.generate_synthetic_streamflow: num_years independence
+from the stencil pool, and the two-pass bias-correction restructure."""
 import arviz as az
 import numpy as np
 import pandas as pd
@@ -31,11 +23,8 @@ def _fitted_model(n_states=2):
 def _reference_single_pass_generate(
     model, start_year, num_years, historical_monthly_data, n_ensembles, random_seed, outflow_index
 ):
-    """Oracle mirroring the pre-refactor implementation: annual generation and monthly
-    disaggregation interleaved in a single loop per ensemble member, rather than the
-    two-pass structure (all annual trajectories, then bias correction, then all
-    disaggregation) added to support `bias_correction_method`. Used to confirm the
-    two-pass version reproduces this exactly when bias correction is off."""
+    """Oracle mirroring the pre-refactor single interleaved loop (vs. the current two-pass
+    structure), to confirm the two-pass version matches it exactly when bias correction is off."""
     np.random.seed(random_seed)
     disaggregation_rng = np.random.default_rng(random_seed)
 
@@ -121,11 +110,9 @@ def test_synthetic_horizon_follows_num_years_not_stencil_pool_size():
 
 
 def test_bias_correction_off_matches_reference_single_pass_implementation():
-    """Guards the loop-split added for bias correction: with bias_correction_method=None,
-    the two-pass implementation (all annual trajectories, then disaggregation) must be
-    bit-for-bit identical to the pre-refactor single interleaved loop, since disaggregation
-    draws from its own independent rng that never interacts with the global numpy random
-    state used for posterior/state sampling."""
+    """With bias_correction_method=None, the two-pass implementation must be bit-for-bit
+    identical to the pre-refactor single loop, since disaggregation's rng is independent
+    of the global numpy random state used for posterior/state sampling."""
     n_sites = 2
     num_years = 5
     n_ensembles = 4
@@ -153,9 +140,8 @@ def test_bias_correction_off_matches_reference_single_pass_implementation():
 
 
 def test_bias_correction_delta_scales_annual_totals_before_disaggregation():
-    """Confirms bias correction actually reaches the disaggregation step: the corrected
-    ensemble's outflow-site annual totals should match the historical mean used for delta
-    scaling, which the fixture's raw (uncorrected) HMM parameters are nowhere near."""
+    """Corrected outflow-site annual totals should match the delta-scaling historical mean,
+    which the fixture's raw HMM parameters are nowhere near."""
     n_sites = 2
     num_years = 5
     n_ensembles = 3

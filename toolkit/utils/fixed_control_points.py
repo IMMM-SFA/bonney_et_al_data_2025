@@ -24,32 +24,9 @@ def splice_fixed_columns(
     basin_config: dict,
     site_names: List[str],
 ) -> np.ndarray:
-    """Reinsert fixed CPs' historical monthly values into generated output, reordered to
-    site_names.
-
-    Parameters
-    ----------
-    generated_monthly : np.ndarray
-        Shape (..., n_months, len(free_sites)) -- one or more realizations' worth of
-        synthetic monthly values for the free (generated) sites only. Any number of
-        leading dimensions is supported (e.g. an ensemble axis); only the last axis is
-        reordered/expanded.
-    free_sites : List[str]
-        Column labels for generated_monthly's last axis, as passed to the generator.
-    historical_monthly : pd.DataFrame
-        Historical monthly data for ALL sites (including fixed ones), e.g. flo_to_df output.
-        Must have exactly n_months rows -- fixed CPs reuse the historical time series
-        position-for-position, so the synthetic horizon must match the historical record's
-        length exactly.
-    basin_config : dict
-        basins.json entry for this basin.
-    site_names : List[str]
-        Desired output column order (typically historical_monthly.columns).
-
-    Returns
-    -------
-    np.ndarray
-        Shape (..., n_months, len(site_names)).
+    """Reinsert fixed CPs' historical monthly values into generated output (shape
+    (..., n_months, len(free_sites)), any number of leading dims), reordered to site_names.
+    Requires n_months == len(historical_monthly).
     """
     fixed_sites = get_fixed_control_points(basin_config)
     n_months = generated_monthly.shape[-2]
@@ -82,7 +59,6 @@ def overwrite_fixed_columns(
     """Overwrite fixed_control_points columns of an already-generated, full-width synthetic
     DataFrame with their historical monthly values, positionally (independent of either
     frame's actual date index). Requires len(synth_flow) == len(historical_monthly).
-
     """
     fixed_sites = get_fixed_control_points(basin_config)
     if fixed_sites and len(synth_flow) != len(historical_monthly):

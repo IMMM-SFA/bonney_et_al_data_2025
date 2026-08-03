@@ -660,13 +660,10 @@ class BayesianStreamflowHMM:
         start_year : int
             Starting year for synthetic data
         num_years : int
-            Number of years of synthetic annual/monthly streamflow to generate per ensemble
-            member. Independent of the size of `historical_monthly_data`'s stencil pool -- the
-            two used to be silently coupled (via the pool's own shape), which breaks once the
-            pool draws from many years/realizations instead of one historical record.
+            Number of years of synthetic streamflow to generate per ensemble member,
+            independent of `historical_monthly_data`'s own length.
         historical_monthly_data : np.ndarray
-            Historical monthly streamflow data, shape (hist_years*12, n_sites) -- the candidate
-            stencil pool used for KNN disaggregation. `hist_years` need not equal `num_years`.
+            Candidate stencil pool for KNN disaggregation, shape (hist_years*12, n_sites).
         n_ensembles : int, default=1000
             Number of ensemble members to generate
         drought : Optional[Dict[str, Any]], default=None
@@ -682,14 +679,11 @@ class BayesianStreamflowHMM:
         outflow_index : int, default=-1
             Index of the outflow control point site for disaggregation
         bias_correction_method : Optional[str], default=None
-            If set, one of `toolkit.hmm.bias_correction`'s named methods (e.g. "delta",
-            "variance", "stretched_quantile"), applied to the whole ensemble's raw annual
-            trajectories immediately after HMM sampling and before analog-year
-            disaggregation to monthly -- so the disaggregation works from bias-corrected
-            annual totals. None (default) reproduces prior behavior exactly.
+            Named method from `toolkit.hmm.bias_correction`, applied to the ensemble's raw
+            annual trajectories before disaggregation. None (default) is a no-op.
         historical_annual : Optional[np.ndarray], default=None
-            Historical annual streamflow at the outflow gage, shape (hist_years,). Required
-            when `bias_correction_method` is set.
+            Historical annual streamflow at the outflow gage. Required if
+            `bias_correction_method` is set.
         bias_correction_kwargs : Optional[Dict[str, Any]], default=None
             Extra keyword arguments forwarded to the chosen bias correction method.
 
@@ -734,9 +728,8 @@ class BayesianStreamflowHMM:
                 hmm_param_labels.append(f'transition_mat_{i}_{j}')
         for i in range(self.n_states):
             hmm_param_labels.append(f'initial_dist_{i}')
-        # Pass 1: for each ensemble member, sample HMM parameters and generate the annual
-        # trajectory. Disaggregation to monthly is deferred to pass 2 below, since bias
-        # correction (if configured) needs every member's annual totals at once.
+        # Pass 1: sample HMM parameters + annual trajectory per member; disaggregation is
+        # deferred to pass 2 since bias correction needs every member's annual total at once.
         for ens in range(n_ensembles):
             # Randomly select a posterior sample (chain, draw)
             chains = self.idata.posterior.sizes['chain']
@@ -779,9 +772,8 @@ class BayesianStreamflowHMM:
             **(bias_correction_kwargs or {}),
         )
 
-        # Pass 2: disaggregate each (possibly bias-corrected) annual trajectory to monthly,
-        # using a dedicated rng (advances across ensemble members, independent of the global
-        # numpy random state used for posterior/state sampling above)
+        # Pass 2: disaggregate each (possibly corrected) trajectory, via an rng independent
+        # of the global numpy random state used for posterior/state sampling above.
         for ens in range(n_ensembles):
             synth_monthly = self.disaggregate_annual_streamflow(
                 annual_streamflow=annual_synthetic_all[ens],
