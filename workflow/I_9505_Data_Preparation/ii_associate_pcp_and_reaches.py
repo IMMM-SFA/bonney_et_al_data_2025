@@ -113,7 +113,7 @@ def find_nearest_reach(gages_gdf: gpd.GeoDataFrame, reaches_gdf: gpd.GeoDataFram
     for gage_idx, gage in gages_gdf.iterrows():
         try:
             # Create a buffer around the gage (in meters since we're in UTM)
-            buffer_size = 1000  # 1km buffer
+            buffer_size = 2000  # 2km buffer -- 1km missed Trinity's IN8CEMA by ~170m
             gage_buffer = gage.geometry.buffer(buffer_size)
             
             # Find reaches that intersect with the buffer
