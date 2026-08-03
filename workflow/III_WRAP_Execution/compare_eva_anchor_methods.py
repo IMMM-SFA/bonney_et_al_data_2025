@@ -1,19 +1,3 @@
-"""
-Compares our reservoir-anchor selection (annual_raw Pearson |r|; see explore_reservoir_eva.py)
-against the method used in the colleague-shared EVA_and_FLO_input_generator.py script: best CP
-per EVA site by highest log-log OLS R^2 on annual sums, with non-positive years dropped.
-
-R^2 of a single-predictor OLS regression equals the squared Pearson correlation coefficient of
-the same two (transformed) variables, so the colleague's "best R^2 CP" ranking is reproduced
-here via squared Pearson correlation on log(flow)/log(net evap) rather than re-fitting OLS
-models -- this is the same computation without adding a statsmodels dependency.
-
-Diagnostic only: writes a per-basin comparison CSV and prints an agreement summary. Does not
-modify basins.json.
-
-Usage:
-    python workflow/III_WRAP_Execution/compare_eva_anchor_methods.py
-"""
 import json
 from pathlib import Path
 

@@ -1,4 +1,3 @@
-import argparse
 import json
 import re
 from pathlib import Path
@@ -199,19 +198,9 @@ def plot_spot_checks(summary: pd.DataFrame, eva_df: pd.DataFrame, flo_df: pd.Dat
     plt.close()
 
 
-def main():
-    parser = argparse.ArgumentParser(description="Explore EVA-site vs FLO-CP correlations for a basin")
-    parser.add_argument("--basin", required=True, help="Basin name as it appears in basins.json (e.g. Colorado)")
-    args = parser.parse_args()
-
-    with open(BASINS_PATH, "r") as f:
-        basins = json.load(f)
-
-    if args.basin not in basins:
-        raise SystemExit(f"Error: basin '{args.basin}' not found in {BASINS_PATH}")
-
-    dat_path, eva_path, flo_path = resolve_wam_paths(basins[args.basin])
-    output_dir = OUTPUT_ROOT / args.basin
+def explore_basin(basin_name: str, basin_config: dict) -> None:
+    dat_path, eva_path, flo_path = resolve_wam_paths(basin_config)
+    output_dir = OUTPUT_ROOT / basin_name
     output_dir.mkdir(parents=True, exist_ok=True)
 
     own_cp_lookup = parse_eva_site_to_cp(dat_path, eva_path)
@@ -253,6 +242,15 @@ def main():
     summary = best_anchors(annual_corrs["annual_raw"])
     summary.to_csv(output_dir / "eva_best_anchors.csv")
     print(f"{summary['weak_anchor'].sum()}/{len(summary)} weak anchors (|r| < {WEAK_ANCHOR_THRESHOLD})")
+
+
+def main():
+    with open(BASINS_PATH, "r") as f:
+        basins = json.load(f)
+
+    for basin_name, basin_config in basins.items():
+        print(f"\n=== {basin_name} ===")
+        explore_basin(basin_name, basin_config)
 
 
 if __name__ == "__main__":
