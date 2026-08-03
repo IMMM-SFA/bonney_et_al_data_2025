@@ -1,6 +1,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 import arviz as az
+import seaborn as sns
 from typing import Optional
 from pathlib import Path
 import pandas as pd
@@ -745,3 +746,62 @@ def plot_comparison(
     plt.tight_layout()
     fig_box.savefig(output_dir / 'monthly_boxplot_hist_vs_synth_proportion_all_years.png')
     plt.close(fig_box)
+
+
+def plot_drought_metrics(metrics_df: pd.DataFrame, historical_metrics: dict, output_dir: Path) -> None:
+    """
+    Violin plots comparing an ensemble's drought/validation metrics against the historical
+    record, for the metrics produced by `toolkit.hmm.metrics.compute_drought_metrics_ensemble`.
+
+    Parameters
+    ----------
+    metrics_df : pd.DataFrame
+        One row per realization, columns = metric names.
+    historical_metrics : dict
+        The same metrics computed for the historical record.
+    output_dir : Path
+        Directory to save plots.
+    """
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    def _violin_panel(metric_names, y_label, title, filename):
+        plot_data = [
+            {"Metric": name, "Value": value}
+            for name in metric_names
+            for value in metrics_df[name]
+        ]
+        df_ens = pd.DataFrame(plot_data)
+
+        fig, ax = plt.subplots(figsize=(10, 6))
+        sns.violinplot(
+            x="Metric", y="Value", data=df_ens,
+            color="#cbd5e1", inner="quartile", linewidth=1.5,
+            density_norm="width", ax=ax,
+        )
+        x_indices = np.arange(len(metric_names))
+        ax.scatter(
+            x_indices, [historical_metrics[name] for name in metric_names],
+            color="#dc2626", s=160, edgecolor="black", linewidth=1.5, zorder=5,
+            label="Historical",
+        )
+        ax.set_title(title, fontsize=14, fontweight="bold", pad=15)
+        ax.set_xlabel("Metric", fontsize=12, labelpad=10)
+        ax.set_ylabel(y_label, fontsize=12, labelpad=10)
+        ax.legend()
+        plt.tight_layout()
+        fig.savefig(output_dir / filename, dpi=150)
+        plt.close(fig)
+
+    _violin_panel(
+        ["mean", "median", "driest_1", "driest_3", "driest_5", "driest_10"],
+        "Average Annual Streamflow Volume",
+        "Streamflow Distribution: Historical Record vs. Synthetic Ensemble",
+        "drought_metrics_streamflow_distributions.png",
+    )
+    _violin_panel(
+        ["flashiness", "avg_drought_duration", "max_drought_duration"],
+        "Count / Years",
+        "Drought Severity Metrics: Historical Record vs. Synthetic Ensemble",
+        "drought_metrics_severity.png",
+    )

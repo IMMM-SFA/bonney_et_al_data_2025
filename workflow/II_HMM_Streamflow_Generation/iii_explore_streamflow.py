@@ -12,6 +12,8 @@ import argparse
 
 from toolkit.data.io import load_netcdf_format
 from toolkit.wrap.io import flo_to_df
+from toolkit.hmm.metrics import compute_drought_metrics_ensemble
+from toolkit.graphics.hmm import plot_drought_metrics
 from toolkit import repo_data_path, outputs_path
 
 sns.set_style("whitegrid")
@@ -62,7 +64,7 @@ def plot_annual_streamflow_with_historical(synthetic_data, hist_monthly, gage_na
     synthetic_years = np.arange(int(time_index[0].year), int(time_index[0].year) + n_years)
     
     # Calculate historical annual sums
-    hist_annual = hist_monthly[gage_name].resample('Y').sum()
+    hist_annual = hist_monthly[gage_name].resample('YS').sum()
     hist_years = hist_annual.index.year
     
     # Create plot
@@ -161,9 +163,21 @@ def explore_streamflow(basin_name, basin, filter_name):
     # 3. Annual sums over time for 10 random realizations and historical data (outflow gage only)
     annual_streamflow_path = plot_dir / f"{filter_name}_{basin_name.lower()}_annual_streamflow.png"
     plot_annual_streamflow_with_historical(synthetic_data, hist_monthly, gage_name, basin_name, filter_name, annual_streamflow_path)
-    
+
+    # 4. Drought/validation metrics (driest-N, flashiness, drought duration) for the outflow
+    # gage: ensemble distribution vs. the historical record.
+    gage_index = list(site_names).index(gage_name)
+    n_realizations, n_months = streamflow.shape[0], streamflow.shape[1]
+    n_years = n_months // 12
+    annual_ensemble = streamflow[:, :n_years * 12, gage_index].reshape(n_realizations, n_years, 12).sum(axis=2)
+    hist_annual = hist_monthly[gage_name].resample('YS').sum().to_numpy()
+
+    metrics_df, historical_metrics = compute_drought_metrics_ensemble(annual_ensemble, hist_annual)
+    drought_metrics_dir = plot_dir / "drought_metrics"
+    plot_drought_metrics(metrics_df, historical_metrics, drought_metrics_dir)
+
     print(f"All plots saved to {plot_dir}")
-    
+
     return synthetic_data
 
 def calculate_streamflow_statistics(synthetic_data, gage_name):
