@@ -1,3 +1,18 @@
+"""
+Compares our reservoir-anchor selection (annual, untransformed Pearson |r|; see
+toolkit.wrap.reservoir_anchors) against the method used in the colleague-shared
+EVA_and_FLO_input_generator.py script: best CP per EVA site by highest log-log OLS R^2 on
+annual sums, with non-positive years dropped.
+
+R^2 of a single-predictor OLS regression equals the squared Pearson correlation coefficient
+of the same two (transformed) variables, so the colleague's "best R^2 CP" ranking is
+reproduced here via squared Pearson correlation on log(flow)/log(net evap) rather than
+re-fitting OLS models -- this is the same computation without adding a statsmodels
+dependency.
+
+Diagnostic only: writes a per-basin comparison CSV and prints an agreement summary. Does not
+modify basins.json.
+"""
 import json
 from pathlib import Path
 
@@ -6,22 +21,15 @@ import pandas as pd
 
 from toolkit import repo_data_path
 from toolkit.wrap.io import evp_to_df, flo_to_df
+from toolkit.wrap.reservoir_anchors import (
+    annualize,
+    best_anchors,
+    compute_annual_raw_correlations,
+    resolve_eva_flo_paths,
+)
 
 BASINS_PATH = repo_data_path / "configs" / "basins.json"
 OUTPUT_ROOT = (Path(__file__).parent / "outputs" / "reservoir_exploration").resolve()
-
-
-def resolve_eva_flo_paths(basin_config: dict):
-    flo_path = repo_data_path / basin_config["flo_file"]
-    basin_dir = flo_path.parent
-    matches = [p for p in basin_dir.iterdir() if p.suffix.lower() == ".eva"]
-    if len(matches) != 1:
-        raise FileNotFoundError(f"Expected exactly one .eva file in {basin_dir}, found {matches}")
-    return matches[0], flo_path
-
-
-def annual_sums(df: pd.DataFrame) -> pd.DataFrame:
-    return df.astype(float).resample("YS").sum()
 
 
 def colleague_best_cp(eva_annual: pd.DataFrame, flo_annual: pd.DataFrame) -> pd.DataFrame:
@@ -57,20 +65,13 @@ def colleague_best_cp(eva_annual: pd.DataFrame, flo_annual: pd.DataFrame) -> pd.
     return pd.DataFrame({"colleague_best_cp": best_cp, "colleague_r2": best_r2})
 
 
-def compare_basin(basin_name: str, basin_config: dict) -> pd.DataFrame:
+def compare_basin(basin_config: dict) -> pd.DataFrame:
     eva_path, flo_path = resolve_eva_flo_paths(basin_config)
     eva_df = evp_to_df(str(eva_path))
     flo_df = flo_to_df(str(flo_path))
 
-    colleague = colleague_best_cp(annual_sums(eva_df), annual_sums(flo_df))
-
-    ours_path = OUTPUT_ROOT / basin_name / "eva_best_anchors.csv"
-    if not ours_path.exists():
-        raise SystemExit(
-            f"Error: no anchor output found at {ours_path}. Run explore_reservoir_eva.py "
-            f"--basin {basin_name} first."
-        )
-    ours = pd.read_csv(ours_path, index_col="eva_site")[["best_cp", "r_value"]].rename(
+    colleague = colleague_best_cp(annualize(eva_df), annualize(flo_df))
+    ours = best_anchors(compute_annual_raw_correlations(eva_df, flo_df)).rename(
         columns={"best_cp": "our_anchor_cp", "r_value": "our_r"}
     )
 
@@ -85,8 +86,9 @@ def main():
 
     for basin_name, basin_config in basins.items():
         print(f"\n=== {basin_name} ===")
-        comparison = compare_basin(basin_name, basin_config)
+        comparison = compare_basin(basin_config)
         output_path = OUTPUT_ROOT / basin_name / "eva_anchor_method_comparison.csv"
+        output_path.parent.mkdir(parents=True, exist_ok=True)
         comparison.to_csv(output_path)
 
         n_sites = len(comparison)

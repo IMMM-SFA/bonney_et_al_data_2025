@@ -1,22 +1,37 @@
-import json
-from pathlib import Path
+"""
+Assigns reservoir EVA-site anchor control points: for each basin, correlates every EVA
+site's historical net evaporation against every FLO control point's historical annual
+streamflow (see toolkit.wrap.reservoir_anchors), takes each site's best-correlated CP,
+applies THRESHOLD, and writes accepted EVA-site -> anchor-CP assignments to
+data/configs/basins.json. Each basin's "reservoir_anchors" key is overwritten
+independently; everything else in basins.json is left alone.
 
-import pandas as pd
+Re-run after adjusting THRESHOLD to update the assignments.
+"""
+
+import json
 
 from toolkit import repo_data_path
+from toolkit.wrap.io import evp_to_df, flo_to_df
+from toolkit.wrap.reservoir_anchors import best_anchors, compute_annual_raw_correlations, resolve_eva_flo_paths
 
 ### Settings ###
 THRESHOLD = 0.3  # Minimum |r| required to accept an anchor
 
 ### Path Configuration ###
 BASINS_PATH = repo_data_path / "configs" / "basins.json"
-EXPLORATION_OUTPUT_DIR = Path(__file__).parent / "outputs" / "reservoir_exploration"
 
 ### Functions ###
 
 
-def assign_basin_anchors(basin_name: str, summary: pd.DataFrame, threshold: float) -> dict:
-    """Threshold Stage 1's per-EVA-site correlation summary into accepted anchor assignments."""
+def assign_basin_anchors(basin_name: str, basin_config: dict, threshold: float) -> dict:
+    """Correlate this basin's EVA sites against its FLO control points and threshold the
+    best-correlated pick per site into accepted anchor assignments."""
+    eva_path, flo_path = resolve_eva_flo_paths(basin_config)
+    eva_df = evp_to_df(str(eva_path))
+    flo_df = flo_to_df(str(flo_path))
+    summary = best_anchors(compute_annual_raw_correlations(eva_df, flo_df))
+
     accepted = {}
     skipped = []
     for eva_site, row in summary.iterrows():
@@ -46,15 +61,8 @@ def main():
     with open(BASINS_PATH, "r") as f:
         basins = json.load(f)
 
-    for basin_name in basins:
-        anchors_csv = EXPLORATION_OUTPUT_DIR / basin_name / "eva_best_anchors.csv"
-        if not anchors_csv.exists():
-            print(f"Skipping '{basin_name}': no Stage 1 correlation output found at {anchors_csv}. "
-                  f"Run explore_reservoir_eva.py first.")
-            continue
-
-        summary = pd.read_csv(anchors_csv, index_col="eva_site")
-        basins[basin_name]["reservoir_anchors"] = assign_basin_anchors(basin_name, summary, THRESHOLD)
+    for basin_name, basin_config in basins.items():
+        basins[basin_name]["reservoir_anchors"] = assign_basin_anchors(basin_name, basin_config, THRESHOLD)
 
     with open(BASINS_PATH, "w") as f:
         json.dump(basins, f, indent=2)
