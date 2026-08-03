@@ -39,6 +39,7 @@ def test_wrap_pipeline_from_hmm(run_wrap_pipeline, historical_flo, basin_config,
 
     synthetic = model.generate_synthetic_streamflow(
         start_year=2020,
+        num_years=len(historical_flo) // 12,
         historical_monthly_data=historical_flo.values,
         n_ensembles=N_REALIZATIONS,
         random_seed=REGRESSION_SEED,
