@@ -1,16 +1,3 @@
-"""Post-hoc bias correction of annual synthetic streamflow against the historical record.
-
-Applied to the BHMM's raw annual output *before* analog-year disaggregation to monthly
-(see `BayesianStreamflowHMM.generate_synthetic_streamflow`), so any correction to the
-annual total is inherited by the monthly disaggregation rather than being undone or
-bypassed by it.
-
-Ported from a colleague-shared reference implementation (kirklocal/BHHM_FLO_and_EVA_scripts/
-Bias_correction.py) that worked on a single basin's outlet gage at a time; generalized here
-to operate on an arbitrary `(n_ensembles, num_years)` synthetic annual array against a
-`(hist_years,)` historical annual array.
-"""
-
 from typing import Optional
 
 import numpy as np
@@ -25,10 +12,6 @@ def delta_scaling(hist_annual: np.ndarray, synth_annual: np.ndarray) -> np.ndarr
 
 def variance_scaling(hist_annual: np.ndarray, synth_annual: np.ndarray) -> np.ndarray:
     """Rescale ensemble anomalies (around the ensemble mean) to match historical variance.
-
-    Dry-side (below-mean) anomalies use a dampened ratio, capped so the driest anomaly
-    can't push a value below zero -- otherwise a wide historical/synthetic variance gap can
-    stretch dry years into unphysical negative flow. Wet-side anomalies use the full ratio.
     """
     mu_hist = np.mean(hist_annual)
     mu_ens = np.mean(synth_annual)

@@ -1,12 +1,3 @@
-"""Drought/validation metrics for comparing synthetic annual streamflow ensembles against
-the historical record.
-
-Ported from a colleague-shared reference implementation (kirklocal/BHHM_FLO_and_EVA_scripts/
-Synthetic_FLO_analysis.py). Metrics operate on 1-D annual arrays; `num_years` is assumed to
-be at least as long as the longest rolling window used (10 years, for `driest_n_year_mean`
-and `decadal_variability`), same as the source implementation.
-"""
-
 import numpy as np
 import pandas as pd
 
@@ -78,14 +69,6 @@ def compute_drought_metrics(annual: np.ndarray, drought_threshold: float) -> dic
 
 
 def compute_drought_metrics_ensemble(annual_ensemble: np.ndarray, historical_annual: np.ndarray):
-    """`compute_drought_metrics` for every realization in `annual_ensemble` (shape
-    (n_realizations, num_years)), plus for `historical_annual` itself -- both using the
-    *historical* 25th percentile as the drought threshold, so drought duration is
-    comparable across realizations and against history on one fixed definition.
-
-    Returns (metrics_df, historical_metrics): metrics_df has one row per realization;
-    historical_metrics is the same dict of metrics computed for historical_annual.
-    """
     historical_annual = np.asarray(historical_annual, dtype=float)
     drought_threshold = np.percentile(historical_annual, 25)
 

@@ -1,14 +1,3 @@
-"""
-Assigns reservoir EVA-site anchor control points: for each basin, correlates every EVA
-site's historical net evaporation against every FLO control point's historical annual
-streamflow (see toolkit.wrap.reservoir_anchors), takes each site's best-correlated CP,
-applies THRESHOLD, and writes accepted EVA-site -> anchor-CP assignments to
-data/configs/basins.json. Each basin's "reservoir_anchors" key is overwritten
-independently; everything else in basins.json is left alone.
-
-Re-run after adjusting THRESHOLD to update the assignments.
-"""
-
 import json
 
 from toolkit import repo_data_path
