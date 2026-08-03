@@ -1,3 +1,5 @@
+import argparse
+import json
 import re
 from pathlib import Path
 
@@ -9,16 +11,34 @@ import seaborn as sns
 from toolkit import repo_data_path
 from toolkit.wrap.io import evp_to_df, flo_to_df
 
-DAT_PATH = repo_data_path / "WRAP" / "basin_wams" / "colo-full" / "C3.dat"
-EVA_PATH = repo_data_path / "WRAP" / "basin_wams" / "colo-full" / "C3.eva"
-FLO_PATH = repo_data_path / "WRAP" / "basin_wams" / "colo-full" / "C3.FLO"
-
-OUTPUT_DIR = (Path(__file__).parent / "outputs" / "reservoir_exploration" / "Colorado").resolve()
+BASINS_PATH = repo_data_path / "configs" / "basins.json"
+OUTPUT_ROOT = (Path(__file__).parent / "outputs" / "reservoir_exploration").resolve()
 
 WEAK_ANCHOR_THRESHOLD = 0.3
 
 
-def parse_eva_site_to_cp(dat_path) -> dict:
+def resolve_wam_paths(basin_config: dict):
+    """Derive (dat_path, eva_path, flo_path) for a basin from its basins.json entry.
+
+    flo_file's exact case is trusted as given; the sibling .dat/.eva files are found by
+    case-insensitive suffix match in the same directory, since basin WAM directories mix
+    filename casing (e.g. Trinity's trin3.dat vs Trin3.flo/Trin3.eva).
+    """
+    flo_path = repo_data_path / basin_config["flo_file"]
+    basin_dir = flo_path.parent
+
+    def find_sibling(suffix: str) -> Path:
+        matches = [p for p in basin_dir.iterdir() if p.suffix.lower() == suffix]
+        if len(matches) != 1:
+            raise FileNotFoundError(
+                f"Expected exactly one {suffix} file in {basin_dir}, found {matches}"
+            )
+        return matches[0]
+
+    return find_sibling(".dat"), find_sibling(".eva"), flo_path
+
+
+def parse_eva_site_to_cp(dat_path, eva_path) -> dict:
     """Parse C3.dat for each EVA site's own control point."""
     quad_comment_re = re.compile(r"REPRESENTED BY EVAP @ CP\s+(\S+)")
     documented = {}
@@ -36,7 +56,7 @@ def parse_eva_site_to_cp(dat_path) -> dict:
                 if cp_id:
                     cp_ids.add(cp_id)
 
-    with open(EVA_PATH, "rt") as f:
+    with open(eva_path, "rt") as f:
         eva_sites = sorted({
             line.split()[0] for line in f
             if line.strip() and line[0] != "*"
@@ -48,7 +68,7 @@ def parse_eva_site_to_cp(dat_path) -> dict:
         if candidate in cp_ids:
             lookup[site] = candidate
         else:
-            print(f"WARNING: no matching CP found in C3.dat for EVA site {site}")
+            print(f"WARNING: no matching CP found in {dat_path.name} for EVA site {site}")
 
     return lookup
 
@@ -180,34 +200,46 @@ def plot_spot_checks(summary: pd.DataFrame, eva_df: pd.DataFrame, flo_df: pd.Dat
 
 
 def main():
-    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    parser = argparse.ArgumentParser(description="Explore EVA-site vs FLO-CP correlations for a basin")
+    parser.add_argument("--basin", required=True, help="Basin name as it appears in basins.json (e.g. Colorado)")
+    args = parser.parse_args()
 
-    own_cp_lookup = parse_eva_site_to_cp(DAT_PATH)
+    with open(BASINS_PATH, "r") as f:
+        basins = json.load(f)
+
+    if args.basin not in basins:
+        raise SystemExit(f"Error: basin '{args.basin}' not found in {BASINS_PATH}")
+
+    dat_path, eva_path, flo_path = resolve_wam_paths(basins[args.basin])
+    output_dir = OUTPUT_ROOT / args.basin
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    own_cp_lookup = parse_eva_site_to_cp(dat_path, eva_path)
     pd.Series(own_cp_lookup, name="own_cp").rename_axis("eva_site").to_csv(
-        OUTPUT_DIR / "eva_site_own_cp_lookup.csv"
+        output_dir / "eva_site_own_cp_lookup.csv"
     )
 
-    eva_df = evp_to_df(str(EVA_PATH))
-    flo_df = flo_to_df(str(FLO_PATH))
+    eva_df = evp_to_df(str(eva_path))
+    flo_df = flo_to_df(str(flo_path))
 
     monthly_corr = compute_correlations(eva_df, flo_df)
-    monthly_corr.to_csv(OUTPUT_DIR / "eva_cp_correlation_matrix_monthly_raw.csv")
+    monthly_corr.to_csv(output_dir / "eva_cp_correlation_matrix_monthly_raw.csv")
     plot_heatmap(
-        monthly_corr, OUTPUT_DIR / "eva_cp_correlation_heatmap_monthly_raw.png",
+        monthly_corr, output_dir / "eva_cp_correlation_heatmap_monthly_raw.png",
         title="Pearson r: EVA site vs FLO CP, monthly_raw",
     )
-    plot_spot_checks(best_anchors(monthly_corr), eva_df, flo_df, OUTPUT_DIR, n=10)
+    plot_spot_checks(best_anchors(monthly_corr), eva_df, flo_df, output_dir, n=10)
 
     annual_corrs = compute_annual_correlations(eva_df, flo_df)
     for label, annual_corr in annual_corrs.items():
-        annual_corr.to_csv(OUTPUT_DIR / f"eva_cp_correlation_matrix_{label}.csv")
+        annual_corr.to_csv(output_dir / f"eva_cp_correlation_matrix_{label}.csv")
         plot_heatmap(
-            annual_corr, OUTPUT_DIR / f"eva_cp_correlation_heatmap_{label}.png",
+            annual_corr, output_dir / f"eva_cp_correlation_heatmap_{label}.png",
             title=f"Pearson r: EVA site vs FLO CP, {label}",
         )
 
     comparison = compare_schemes(monthly_corr, annual_corrs)
-    comparison.to_csv(OUTPUT_DIR / "eva_scheme_comparison.csv")
+    comparison.to_csv(output_dir / "eva_scheme_comparison.csv")
 
     scheme_cols = ["monthly_raw"] + list(annual_corrs.keys())
     print(comparison[scheme_cols].describe().loc[["mean", "50%", "min", "max"]].rename(index={"50%": "median"}).to_string())
@@ -219,7 +251,7 @@ def main():
     # matching: it captures nearly all of the annual-vs-monthly improvement without a
     # log-transformed anchor CP, which would complicate Stage 3's raw-value transfer.
     summary = best_anchors(annual_corrs["annual_raw"])
-    summary.to_csv(OUTPUT_DIR / "eva_best_anchors.csv")
+    summary.to_csv(output_dir / "eva_best_anchors.csv")
     print(f"{summary['weak_anchor'].sum()}/{len(summary)} weak anchors (|r| < {WEAK_ANCHOR_THRESHOLD})")
 
 

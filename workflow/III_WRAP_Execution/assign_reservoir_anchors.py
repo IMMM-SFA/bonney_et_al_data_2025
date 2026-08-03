@@ -17,8 +17,10 @@ import json
 
 from toolkit import repo_data_path
 
+from pathlib import Path
+
 BASINS_PATH = repo_data_path / "configs" / "basins.json"
-EXPLORATION_OUTPUT_DIR = repo_data_path.parent / "kirklocal" / "reservoir_exploration" / "outputs"
+EXPLORATION_OUTPUT_DIR = Path(__file__).parent / "outputs" / "reservoir_exploration"
 
 DEFAULT_THRESHOLD = 0.3
 
