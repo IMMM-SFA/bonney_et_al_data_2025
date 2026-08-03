@@ -40,13 +40,6 @@ def split_into_sublists(lst, n):
     return sublists
 
 
-def fix_cols(basin_config, synth_flow, default_flo):
-    """Splice in historical flow for gages outside the basin model boundary."""
-    for gage in basin_config.get("external_gages", []):
-        synth_flow[gage] = default_flo[gage].astype(float)
-    return synth_flow
-
-
 def wrap_pipeline(
     slot,
     flo_files,
@@ -112,19 +105,21 @@ def wrap_pipeline(
 
 
 def process_ensemble_member(args):
-    """Worker function to process a single ensemble member"""
-    ens, streamflow, streamflow_index, streamflow_columns, basin_config, flo_df, synthetic_flo_output_path = args
+    """Worker function to process a single ensemble member.
+
+    fixed_control_points (out-of-basin gages, placeholder CPs) are already correct in
+    `streamflow` -- Stage II (ii_generate_synthetic_streamflow.py) splices them in at
+    generation time via toolkit.utils.fixed_control_points, so there's nothing left to fix
+    up here.
+    """
+    ens, streamflow, streamflow_index, streamflow_columns, synthetic_flo_output_path = args
 
     data = streamflow[ens, :, :]
     synth_flow = pd.DataFrame(
         data,
-        index=streamflow_index,
+        index=pd.to_datetime(streamflow_index),
         columns=streamflow_columns,
     )
-
-    synth_flow.index = pd.to_datetime(synth_flow.index)
-    flo_df.index = synth_flow.index
-    fix_cols(basin_config, synth_flow, flo_df)
 
     out_name = synthetic_flo_output_path / f"synthflow_{ens:02d}.FLO"
     df_to_flo(synth_flow, out_name)

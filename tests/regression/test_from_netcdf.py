@@ -2,7 +2,7 @@
 Regression test: 10 realizations from an existing synthetic streamflow NetCDF
 through the full WRAP pipeline, compared against a stored baseline.
 
-Catches regressions in fix_cols, df_to_flo, WRAPExecutionSlot, out_to_dfs,
+Catches regressions in overwrite_fixed_columns, df_to_flo, WRAPExecutionSlot, out_to_dfs,
 and process_diversion_csv / process_reservoir_csv.
 
 Prerequisites:

@@ -12,7 +12,7 @@ from pathlib import Path
 
 from toolkit import repo_data_path
 from toolkit.wrap.io import df_to_flo, out_to_dfs, flo_to_df
-from toolkit.wrap.wraputils import fix_cols
+from toolkit.utils.fixed_control_points import overwrite_fixed_columns
 from toolkit.wrap.processing import process_diversion_csv, process_reservoir_csv
 from tests.regression._paths import BASIN_NAME, FLO_FILE
 from tests.regression._helpers import DIVERSION_COLUMNS, RESERVOIR_COLUMNS
@@ -61,9 +61,7 @@ def run_wrap_pipeline(basin_config, historical_flo):
                 index=pd.to_datetime(streamflow_index),
                 columns=streamflow_columns,
             )
-            flo_ref = historical_flo.copy()
-            flo_ref.index = synth_flow.index
-            fix_cols(basin_config, synth_flow, flo_ref)
+            overwrite_fixed_columns(synth_flow, historical_flo, basin_config)
 
             flo_path = Path(flo_dir) / f"regression_{i:04d}.FLO"
             df_to_flo(synth_flow, flo_path)

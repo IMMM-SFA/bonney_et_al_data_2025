@@ -114,7 +114,7 @@ def main():
                 # Prepare arguments for each ensemble member
                 ensemble_args = []
                 for ens in range(n_ensembles):
-                    ens_args = (ens, streamflow, streamflow_index, streamflow_columns, basin, historical_flow_df, synthetic_flo_output_path)
+                    ens_args = (ens, streamflow, streamflow_index, streamflow_columns, synthetic_flo_output_path)
                     ensemble_args.append(ens_args)
 
                 # Create and start processes
