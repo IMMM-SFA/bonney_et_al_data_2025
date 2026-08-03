@@ -638,7 +638,7 @@ class BayesianStreamflowHMM:
     def generate_synthetic_streamflow(
         self,
         start_year: int,
-        # num_years: int,
+        num_years: int,
         historical_monthly_data: np.ndarray,
         n_ensembles: int = 1000,
         drought: Optional[Dict[str, Any]] = None,
@@ -646,18 +646,27 @@ class BayesianStreamflowHMM:
         h5_path: Optional[str] = None,
         site_names: Optional[list] = None,
         time_index: Optional[list] = None,
-        outflow_index: int = -1
+        outflow_index: int = -1,
+        bias_correction_method: Optional[str] = None,
+        historical_annual: Optional[np.ndarray] = None,
+        bias_correction_kwargs: Optional[Dict[str, Any]] = None,
     ) -> None:
         """
         Generate multiple synthetic streamflow ensemble members and save to HDF5.
         Output axes: (ensemble_num, month_date, gage_site). Metadata for HMM parameters per member.
-        
+
         Parameters
         ----------
         start_year : int
             Starting year for synthetic data
+        num_years : int
+            Number of years of synthetic annual/monthly streamflow to generate per ensemble
+            member. Independent of the size of `historical_monthly_data`'s stencil pool -- the
+            two used to be silently coupled (via the pool's own shape), which breaks once the
+            pool draws from many years/realizations instead of one historical record.
         historical_monthly_data : np.ndarray
-            Historical monthly streamflow data
+            Historical monthly streamflow data, shape (hist_years*12, n_sites) -- the candidate
+            stencil pool used for KNN disaggregation. `hist_years` need not equal `num_years`.
         n_ensembles : int, default=1000
             Number of ensemble members to generate
         drought : Optional[Dict[str, Any]], default=None
@@ -672,7 +681,18 @@ class BayesianStreamflowHMM:
             Time index for streamflow
         outflow_index : int, default=-1
             Index of the outflow control point site for disaggregation
-        
+        bias_correction_method : Optional[str], default=None
+            If set, one of `toolkit.hmm.bias_correction`'s named methods (e.g. "delta",
+            "variance", "stretched_quantile"), applied to the whole ensemble's raw annual
+            trajectories immediately after HMM sampling and before analog-year
+            disaggregation to monthly -- so the disaggregation works from bias-corrected
+            annual totals. None (default) reproduces prior behavior exactly.
+        historical_annual : Optional[np.ndarray], default=None
+            Historical annual streamflow at the outflow gage, shape (hist_years,). Required
+            when `bias_correction_method` is set.
+        bias_correction_kwargs : Optional[Dict[str, Any]], default=None
+            Extra keyword arguments forwarded to the chosen bias correction method.
+
         Returns
         -------
         dict: Data dictionary containing:
@@ -685,23 +705,22 @@ class BayesianStreamflowHMM:
             - 'annual_states_index': year index for states
         """
         from toolkit.data.io import dict_to_hdf5
+        from toolkit.hmm.bias_correction import apply_bias_correction
         logger.info("Generating synthetic streamflow ensemble...")
         if self.idata is None:
             raise ValueError("Model must be fit before generating synthetic data")
+        if bias_correction_method is not None and historical_annual is None:
+            raise ValueError("historical_annual is required when bias_correction_method is set")
         if random_seed is not None:
             np.random.seed(random_seed)
         disaggregation_rng = np.random.default_rng(random_seed)
 
-        # reshape historical_monthly_data to (n_years, 12, n_locations)
-        hist_monthly_sf = historical_monthly_data.reshape(historical_monthly_data.shape[0]//12, 12, -1)
-        
-        # Get number of years and months from historical_monthly_data
-        num_years = hist_monthly_sf.shape[0]
         n_months = num_years * 12
-        n_locations = hist_monthly_sf.shape[1] if len(hist_monthly_sf.shape) == 2 else hist_monthly_sf.shape[2]
-        
+        n_locations = historical_monthly_data.shape[1]
+
         # Prepare output arrays
         streamflow = np.zeros((n_months, n_locations, n_ensembles))
+        annual_synthetic_all = np.zeros((n_ensembles, num_years))
         annual_states = np.zeros((num_years, n_ensembles), dtype=int)  # Store states for each year and ensemble
         hmm_params = []
         # Build detailed hmm_param_labels based on n_states
@@ -715,7 +734,9 @@ class BayesianStreamflowHMM:
                 hmm_param_labels.append(f'transition_mat_{i}_{j}')
         for i in range(self.n_states):
             hmm_param_labels.append(f'initial_dist_{i}')
-        # For each ensemble member, sample HMM parameters and generate synthetic data
+        # Pass 1: for each ensemble member, sample HMM parameters and generate the annual
+        # trajectory. Disaggregation to monthly is deferred to pass 2 below, since bias
+        # correction (if configured) needs every member's annual totals at once.
         for ens in range(n_ensembles):
             # Randomly select a posterior sample (chain, draw)
             chains = self.idata.posterior.sizes['chain']
@@ -737,7 +758,6 @@ class BayesianStreamflowHMM:
             ])
             hmm_params.append(param_vec)
             # Generate annual synthetic data
-            num_years = n_months // 12
             annual_synthetic = np.zeros(num_years)
             states = np.zeros(num_years, dtype=int)
             states[0] = np.random.choice(self.n_states, p=initial_dist)
@@ -747,21 +767,31 @@ class BayesianStreamflowHMM:
                 probs = transition_mat[current_state]
                 states[t] = np.random.choice(self.n_states, p=probs)
                 annual_synthetic[t] = np.random.normal(mu[states[t]], sigma[states[t]])
-            annual_synthetic = np.expm1(annual_synthetic)
-            # Disaggregate to monthly using a dedicated rng (advances across ensemble members,
-            # independent of the global numpy random state used for posterior/state sampling above)
+            annual_synthetic_all[ens] = np.expm1(annual_synthetic)
+            # Store the states for this ensemble member
+            annual_states[:, ens] = states
+        hmm_params = np.stack(hmm_params, axis=0)
+
+        annual_synthetic_all = apply_bias_correction(
+            bias_correction_method,
+            historical_annual,
+            annual_synthetic_all,
+            **(bias_correction_kwargs or {}),
+        )
+
+        # Pass 2: disaggregate each (possibly bias-corrected) annual trajectory to monthly,
+        # using a dedicated rng (advances across ensemble members, independent of the global
+        # numpy random state used for posterior/state sampling above)
+        for ens in range(n_ensembles):
             synth_monthly = self.disaggregate_annual_streamflow(
-                annual_streamflow=annual_synthetic,
+                annual_streamflow=annual_synthetic_all[ens],
                 historical_monthly_data=historical_monthly_data,
                 outflow_index=outflow_index,
                 rng=disaggregation_rng,
             )
             # synth_monthly: (n_months, n_locations)
             streamflow[:, :, ens] = synth_monthly.values if hasattr(synth_monthly, 'values') else synth_monthly
-            # Store the states for this ensemble member
-            annual_states[:, ens] = states
-        hmm_params = np.stack(hmm_params, axis=0)
-        
+
         # Transpose streamflow to (ensemble_num, month_date, gage_site)
         streamflow_out = np.transpose(streamflow, (2, 0, 1))
         # Create year index for states
