@@ -5,8 +5,8 @@ import pandas as pd
 
 
 def get_fixed_control_points(basin_config: dict) -> List[str]:
-    """CP ids to hold fixed for this basin, per basins.json's "fixed_control_points"."""
-    return list(basin_config.get("fixed_control_points", {}).keys())
+    """CP ids to hold fixed for this basin, per basins.json's "fixed_control_points" list."""
+    return list(basin_config.get("fixed_control_points", []))
 
 
 def split_free_and_fixed(site_names: List[str], basin_config: dict) -> Tuple[List[str], List[str]]:

@@ -16,7 +16,7 @@ from toolkit.utils.fixed_control_points import (
 
 
 def _basin_config(fixed_sites):
-    return {"fixed_control_points": {site: {"reason": "test"} for site in fixed_sites}}
+    return {"fixed_control_points": list(fixed_sites)}
 
 
 def test_get_fixed_control_points_empty_when_absent():
