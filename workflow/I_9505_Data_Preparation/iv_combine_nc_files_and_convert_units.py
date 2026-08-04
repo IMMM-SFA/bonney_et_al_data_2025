@@ -164,4 +164,8 @@ def combine_nc_files_by_time_period(input_folder, output_folder):
 
 ### Main ###
 
-combine_nc_files_by_time_period(input_folder, output_folder)
+def main():
+    combine_nc_files_by_time_period(input_folder, output_folder)
+
+if __name__ == "__main__":
+    main()

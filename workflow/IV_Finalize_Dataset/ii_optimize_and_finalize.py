@@ -16,10 +16,11 @@ import numpy as np
 import xarray as xr
 from pathlib import Path
 import json
-import argparse
 import shutil
 
 from toolkit import repo_data_path, outputs_path
+from toolkit.utils.workflow_cli import parse_filter_basin_args, select_filter_sets_and_basins
+from toolkit.paths import synthetic_dataset_path
 
 ### Settings ###
 # Compression settings
@@ -161,7 +162,7 @@ def optimize_single_file(input_path, output_path):
     print("\nApplying compression settings:")
     print(f"  Compression level: {COMPRESSION_LEVEL}")
     print(f"  Shuffle filter: {USE_SHUFFLE}")
-    print(f"  Chunking: Along realization axis")
+    print("  Chunking: Along realization axis")
     
     encoding = {}
     for var_name in list(ds.data_vars) + list(ds.coords):
@@ -203,7 +204,7 @@ def optimize_single_file(input_path, output_path):
         ds.close()
         
         # Verify the output file was created and is readable
-        print(f"Verifying optimized file...")
+        print("Verifying optimized file...")
         test_ds = xr.open_dataset(output_path)
         test_ds.close()
         
@@ -212,7 +213,7 @@ def optimize_single_file(input_path, output_path):
         reduction = original_size - optimized_size
         reduction_pct = (reduction / original_size) * 100
         
-        print(f"\nOptimization complete!")
+        print("\nOptimization complete!")
         print(f"  Original size:  {original_size:.2f} MB")
         print(f"  Optimized size: {optimized_size:.2f} MB")
         print(f"  Reduction:      {reduction:.2f} MB ({reduction_pct:.1f}%)")
@@ -251,11 +252,11 @@ def process_filter_basin_combination(args):
         Results dictionary
     """
     filter_name, basin_name = args
-    
+
     # Construct input NetCDF file path
-    nc_filename = f"{filter_name}_{basin_name.lower()}_synthetic_dataset.nc"
-    input_path = outputs_path / "bayesian_hmm" / filter_name / basin_name.lower() / nc_filename
-    
+    input_path = synthetic_dataset_path(filter_name, basin_name)
+    nc_filename = input_path.name
+
     if not input_path.exists():
         print(f"\nSkipping (not found): {nc_filename}")
         return {
@@ -273,36 +274,18 @@ def process_filter_basin_combination(args):
 
 def main():
     # Parse command line arguments
-    parser = argparse.ArgumentParser(description='Optimize NetCDF files and prepare data archive')
-    parser.add_argument('--filter', help='Filter name to process (e.g., All Models, Bias Correction - Daymet)')
-    parser.add_argument('--basin', help='Basin name to process (e.g., Colorado, Trinity, Sabine)')
-    args = parser.parse_args()
-    
+    args = parse_filter_basin_args('Optimize NetCDF files and prepare data archive')
+
     # Load basin configuration
     with open(basins_path, "r") as f:
         BASINS = json.load(f)
-    
+
     # Load ensemble filters configuration
     with open(ensemble_filters_path, "r") as f:
         ENSEMBLE_CONFIG = json.load(f)
-    
-    # Filter processing based on arguments
-    if args.filter:
-        filter_sets = [fs for fs in ENSEMBLE_CONFIG if fs["name"] == args.filter]
-        if not filter_sets:
-            print(f"Error: Filter '{args.filter}' not found in configuration")
-            return 1
-    else:
-        filter_sets = ENSEMBLE_CONFIG
-    
-    if args.basin:
-        if args.basin not in BASINS:
-            print(f"Error: Basin '{args.basin}' not found in configuration")
-            return 1
-        basins = {args.basin: BASINS[args.basin]}
-    else:
-        basins = BASINS
-    
+
+    filter_sets, basins = select_filter_sets_and_basins(BASINS, ENSEMBLE_CONFIG, args.filter, args.basin)
+
     # Collect all filter-basin combinations
     all_combinations = []
     for filter_set in filter_sets:
@@ -345,7 +328,7 @@ def main():
         print(f"Total reduction:      {total_reduction:.2f} MB ({total_reduction_pct:.1f}%)")
     
     if failed:
-        print(f"\nFailed files:")
+        print("\nFailed files:")
         for r in failed:
             print(f"  ❌ {Path(r['file']).name}: {r.get('error', 'Unknown error')}")
         raise Exception("Failed to optimize some files")
@@ -374,10 +357,10 @@ def main():
     print("ARCHIVE COMPLETE")
     print("="*80)
     print(f"Output directory: {output_dir}")
-    print(f"\nStructure:")
+    print("\nStructure:")
     print(f"  {output_dir.name}/")
-    print(f"    README.md")
-    print(f"    data/")
+    print("    README.md")
+    print("    data/")
     for basin_name in basins.keys():
         basin_folder = output_dir / basin_name
         if basin_folder.exists():

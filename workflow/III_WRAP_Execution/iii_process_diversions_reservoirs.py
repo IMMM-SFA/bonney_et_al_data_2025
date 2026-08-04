@@ -9,9 +9,10 @@ import numpy as np
 import pandas as pd
 from pathlib import Path
 import json
-import argparse
 import xarray as xr
 from toolkit import repo_data_path, outputs_path
+from toolkit.utils.workflow_cli import parse_filter_basin_args, select_filter_sets_and_basins
+from toolkit.paths import synthetic_dataset_path
 
 
 ### Settings ###
@@ -36,28 +37,28 @@ def process_filter_basin_combination(args):
     Parameters
     ----------
     args : tuple
-        Contains (filter_name, basin_name, basin)
-    
+        Contains (filter_name, basin_name, basin, variable_metadata)
+
     Returns
     -------
     str
         Success message
     """
-    filter_name, basin_name, basin = args
-    
+    filter_name, basin_name, basin, variable_metadata = args
+
     print(f"  Processing basin: {basin_name} with filter: {filter_name}")
-    
+
     # Initialize paths
-    synthetic_data_path = outputs_path / "bayesian_hmm" / f"{filter_name}" /f"{basin_name.lower()}" / f"{filter_name}_{basin_name.lower()}_synthetic_dataset.nc"
+    synthetic_data_path = synthetic_dataset_path(filter_name, basin_name)
     diversions_csvs_path = outputs_path / "wrap_results" / filter_name / basin_name / "diversions"
     reservoirs_csvs_path = outputs_path / "wrap_results" / filter_name / basin_name / "reservoirs"
-    
+
     # Process diversions and reservoirs
-    process_diversions_and_reservoirs(synthetic_data_path, diversions_csvs_path, reservoirs_csvs_path)
-    
+    process_diversions_and_reservoirs(synthetic_data_path, diversions_csvs_path, reservoirs_csvs_path, variable_metadata)
+
     return f"Successfully processed {filter_name} - {basin_name}"
 
-def process_diversions_and_reservoirs(synthetic_data_path, diversions_csvs_path, reservoirs_csvs_path):
+def process_diversions_and_reservoirs(synthetic_data_path, diversions_csvs_path, reservoirs_csvs_path, variable_metadata):
     """
     Process diversions and reservoirs CSV files and append them to the synthetic data NetCDF file.
     
@@ -133,9 +134,8 @@ def process_diversions_and_reservoirs(synthetic_data_path, diversions_csvs_path,
             variable_data[i, :, :] = df.values
         
         # Get metadata for this variable
-        global VARIABLE_METADATA
-        if variable_name in VARIABLE_METADATA['diversion']:
-            metadata = VARIABLE_METADATA['diversion'][variable_name]
+        if variable_name in variable_metadata['diversion']:
+            metadata = variable_metadata['diversion'][variable_name]
         else:
             # Fallback metadata if variable not found
             metadata = {
@@ -230,8 +230,8 @@ def process_diversions_and_reservoirs(synthetic_data_path, diversions_csvs_path,
             variable_data[i, :, :] = df.values
         
         # Get metadata for this variable
-        if variable_name in VARIABLE_METADATA['reservoir']:
-            metadata = VARIABLE_METADATA['reservoir'][variable_name]
+        if variable_name in variable_metadata['reservoir']:
+            metadata = variable_metadata['reservoir'][variable_name]
         else:
             # Fallback metadata if variable not found
             metadata = {
@@ -268,10 +268,7 @@ def process_diversions_and_reservoirs(synthetic_data_path, diversions_csvs_path,
 
 def main():
     # Parse command line arguments
-    parser = argparse.ArgumentParser(description='Process diversions and reservoirs for specific filter-basin combinations')
-    parser.add_argument('--filter', help='Filter name to process (e.g., basic, cooler, hotter)')
-    parser.add_argument('--basin', help='Basin name to process (e.g., Colorado, Trinity, Brazos)')
-    args = parser.parse_args()
+    args = parse_filter_basin_args('Process diversions and reservoirs for specific filter-basin combinations')
 
     # Load basin configuration and variable metadata
     with open(basins_path, "r") as f:
@@ -282,37 +279,20 @@ def main():
         ENSEMBLE_CONFIG = json.load(f)
 
     # Load variable metadata
-    global VARIABLE_METADATA
     with open(metadata_path, 'r') as f:
-        VARIABLE_METADATA = json.load(f)
+        variable_metadata = json.load(f)
 
-    # Filter processing based on arguments
-    if args.filter:
-        filter_sets = [fs for fs in ENSEMBLE_CONFIG if fs["name"] == args.filter]
-        if not filter_sets:
-            print(f"Error: Filter '{args.filter}' not found in configuration")
-            return
-    else:
-        filter_sets = ENSEMBLE_CONFIG
-    
-    if args.basin:
-        if args.basin not in BASINS:
-            print(f"Error: Basin '{args.basin}' not found in configuration")
-            return
-        basins = {args.basin: BASINS[args.basin]}
-    else:
-        basins = BASINS
+    filter_sets, basins = select_filter_sets_and_basins(BASINS, ENSEMBLE_CONFIG, args.filter, args.basin)
 
     # Collect all filter-basin combinations
     all_combinations = []
     for filter_set in filter_sets:
         filter_name = filter_set["name"]
         for basin_name, basin in basins.items():
-            args = (filter_name, basin_name, basin)
-            all_combinations.append(args)
-    
+            all_combinations.append((filter_name, basin_name, basin, variable_metadata))
+
     print(f"Processing {len(all_combinations)} filter-basin combinations...")
-    
+
     # Process all combinations in parallel
     with multiprocessing.Pool(processes=num_processes) as pool:
         results = pool.map(process_filter_basin_combination, all_combinations)

@@ -14,9 +14,10 @@ import numpy as np
 from pathlib import Path
 import sys
 import json
-import argparse
 
-from toolkit import repo_data_path, outputs_path
+from toolkit import repo_data_path
+from toolkit.utils.workflow_cli import parse_filter_basin_args, select_filter_sets_and_basins
+from toolkit.paths import synthetic_dataset_path
 
 ### Settings ###
 # Set to False if WRAP execution steps have not been run
@@ -81,9 +82,6 @@ def get_expected_coordinates(hmm_metadata, wrap_metadata):
     
     return expected_coords
 
-def build_synthetic_dataset_path(filter_name: str, basin_name: str) -> Path:
-    return outputs_path / "bayesian_hmm" / f"{filter_name}" / f"{basin_name.lower()}" / f"{filter_name}_{basin_name.lower()}_synthetic_dataset.nc"
-
 def validate_synthetic_dataset(file_path: Path, hmm_metadata: dict, wrap_metadata: dict) -> dict:
     """Validate synthetic streamflow dataset structure using metadata files."""
     print(f"\n{'='*80}")
@@ -104,16 +102,14 @@ def validate_synthetic_dataset(file_path: Path, hmm_metadata: dict, wrap_metadat
     expected_coords = get_expected_coordinates(hmm_metadata, wrap_metadata)
     
     print(f"\nChecking {len(expected_vars)} expected variables...")
-    print(f"-" * 80)
-    
+    print("-" * 80)
+
     # Check each expected variable
     for var_name, var_info in expected_vars.items():
-        # Extract metadata and type
+        # Extract type
         if isinstance(var_info, dict) and "metadata" in var_info:
-            var_metadata = var_info["metadata"]
             var_type = var_info.get("type", "unknown")
         else:
-            var_metadata = var_info
             var_type = "hmm"
         
         # Check if variable exists (handle alternate names)
@@ -152,7 +148,7 @@ def validate_synthetic_dataset(file_path: Path, hmm_metadata: dict, wrap_metadat
                 print(f"  Sample values (n={sample_size}): {samples}")
                 print(f"  Mean: {mean_val:.6f}")
             else:
-                print(f"  Warning: All values are NaN")
+                print("  Warning: All values are NaN")
                 results["warnings"].append(f"Variable '{actual_var_name}' contains only NaN values")
         except Exception as e:
             print(f"  Warning: Could not compute statistics: {e}")
@@ -173,7 +169,7 @@ def validate_synthetic_dataset(file_path: Path, hmm_metadata: dict, wrap_metadat
     # Check coordinates
     print(f"\n{'-' * 80}")
     print(f"Checking {len(expected_coords)} expected coordinates...")
-    print(f"-" * 80)
+    print("-" * 80)
     
     for coord_name, coord_metadata in expected_coords.items():
         # Handle alternate coordinate names
@@ -199,7 +195,7 @@ def validate_synthetic_dataset(file_path: Path, hmm_metadata: dict, wrap_metadat
             # Check for long_name attribute
             if "long_name" not in coord_obj.attrs:
                 results["warnings"].append(f"Coordinate '{actual_coord_name}' missing long_name attribute")
-                print(f"  Missing attribute: long_name")
+                print("  Missing attribute: long_name")
     
     ds.close()
     
@@ -252,11 +248,8 @@ def print_summary(results: list):
 
 def main():
     # Parse command line arguments
-    parser = argparse.ArgumentParser(description='Validate WRAP outputs for specific filter-basin combinations')
-    parser.add_argument('--filter', help='Filter name to process (e.g., basic, cooler, hotter)')
-    parser.add_argument('--basin', help='Basin name to process (e.g., Colorado, Trinity, Brazos)')
-    args = parser.parse_args()
-    
+    args = parse_filter_basin_args('Validate WRAP outputs for specific filter-basin combinations')
+
     # Load basin configuration from JSON
     with open(basins_path, "r") as f:
         BASINS = json.load(f)
@@ -273,26 +266,11 @@ def main():
         print(f"  Loaded {len(wrap_metadata.get('diversion', {}))} diversion variables")
         print(f"  Loaded {len(wrap_metadata.get('reservoir', {}))} reservoir variables")
     else:
-        print(f"  WRAP variables validation disabled (INCLUDE_WRAP_VARIABLES = False)")
+        print("  WRAP variables validation disabled (INCLUDE_WRAP_VARIABLES = False)")
 
     results = []
-    
-    # Filter processing based on arguments
-    if args.filter:
-        filter_sets = [fs for fs in ENSEMBLE_CONFIG if fs["name"] == args.filter]
-        if not filter_sets:
-            print(f"Error: Filter '{args.filter}' not found in configuration")
-            return 1
-    else:
-        filter_sets = ENSEMBLE_CONFIG
-    
-    if args.basin:
-        if args.basin not in BASINS:
-            print(f"Error: Basin '{args.basin}' not found in configuration")
-            return 1
-        basins = {args.basin: BASINS[args.basin]}
-    else:
-        basins = BASINS
+
+    filter_sets, basins = select_filter_sets_and_basins(BASINS, ENSEMBLE_CONFIG, args.filter, args.basin)
 
     # Process selected combinations
     for filter_set in filter_sets:
@@ -301,7 +279,7 @@ def main():
         
         for basin_name, basin in basins.items():
             print(f"  Validating dataset for basin: {basin_name}")
-            dataset_path = build_synthetic_dataset_path(filter_name, basin_name)
+            dataset_path = synthetic_dataset_path(filter_name, basin_name)
             if not dataset_path.exists():
                 results.append({
                     "file_path": str(dataset_path),

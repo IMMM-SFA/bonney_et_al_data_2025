@@ -1,19 +1,18 @@
 """
 This script loads synthetic streamflow data and produces exploratory plots.
 """
-import os
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
-from pathlib import Path
 import json
-import argparse
 
 from toolkit.data.io import load_netcdf_format
 from toolkit.wrap.io import flo_to_df
 from toolkit.hmm.metrics import compute_drought_metrics_ensemble
 from toolkit.graphics.hmm import plot_drought_metrics
+from toolkit.utils.workflow_cli import parse_filter_basin_args, select_filter_sets_and_basins
+from toolkit.paths import basin_filter_dir, synthetic_dataset_path
 from toolkit import repo_data_path, outputs_path
 
 sns.set_style("whitegrid")
@@ -24,8 +23,8 @@ output_dir = outputs_path / "bayesian_hmm"
 
 def load_synthetic_data(basin_name, filter_name):
     """Load synthetic streamflow data from NetCDF file."""
-    synthetic_nc_path = output_dir / f"{filter_name}" / f"{basin_name.lower()}" / f"{filter_name}_{basin_name.lower()}_synthetic_dataset.nc"
-    
+    synthetic_nc_path = synthetic_dataset_path(filter_name, basin_name)
+
     if not synthetic_nc_path.exists():
         print(f"Synthetic data not found at {synthetic_nc_path}")
         return None
@@ -124,7 +123,7 @@ def explore_streamflow(basin_name, basin, filter_name):
     print(f"\nExploring streamflow for {basin_name} ({filter_name})")
     
     # Create output directory for plots
-    plot_dir = output_dir / f"{filter_name}" / f"{basin_name.lower()}" / "plots"
+    plot_dir = basin_filter_dir(filter_name, basin_name) / "plots"
     plot_dir.mkdir(parents=True, exist_ok=True)
     
     # Load synthetic data
@@ -227,7 +226,7 @@ def generate_basin_summary_table(basin_name, basin, filter_sets):
     gage_name = basin["gage_name"]
     
     # Create output directory
-    basin_summary_dir = output_dir / f"basin_summaries"
+    basin_summary_dir = output_dir / "basin_summaries"
     basin_summary_dir.mkdir(parents=True, exist_ok=True)
     
     # Collect statistics for each filter
@@ -280,35 +279,17 @@ def generate_basin_summary_table(basin_name, basin, filter_sets):
     print(f"  Outflow gage: {gage_name}")
 
 def main():
-    parser = argparse.ArgumentParser(description='Explore synthetic streamflow data and generate plots')
-    parser.add_argument('--filter', help='Filter name to process (e.g., basic, cooler, hotter)')
-    parser.add_argument('--basin', help='Basin name to process (e.g., Colorado, Trinity, Brazos)')
-    args = parser.parse_args()
-    
+    args = parse_filter_basin_args('Explore synthetic streamflow data and generate plots')
+
     # Load configurations
     with open(basins_path, "r") as f:
         BASINS = json.load(f)
-    
+
     with open(ensemble_filters_path, "r") as f:
         ENSEMBLE_CONFIG = json.load(f)
-    
-    # Filter processing based on arguments
-    if args.filter:
-        filter_sets = [fs for fs in ENSEMBLE_CONFIG if fs["name"] == args.filter]
-        if not filter_sets:
-            print(f"Error: Filter '{args.filter}' not found in configuration")
-            return
-    else:
-        filter_sets = ENSEMBLE_CONFIG
-    
-    if args.basin:
-        if args.basin not in BASINS:
-            print(f"Error: Basin '{args.basin}' not found in configuration")
-            return
-        basins = {args.basin: BASINS[args.basin]}
-    else:
-        basins = BASINS
-    
+
+    filter_sets, basins = select_filter_sets_and_basins(BASINS, ENSEMBLE_CONFIG, args.filter, args.basin)
+
     # Process selected combinations - generate plots for each basin/filter
     for filter_set in filter_sets:
         filter_name = filter_set["name"]

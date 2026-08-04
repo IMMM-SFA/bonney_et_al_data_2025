@@ -6,13 +6,14 @@ import os
 import multiprocessing
 from pathlib import Path
 import json
-import argparse
 from toolkit import repo_data_path, outputs_path
 from toolkit.wrap.io import flo_to_df, evp_to_df
 from toolkit.data.io import load_netcdf_format
 from toolkit.wrap.execution_slot import LocalWRAPExecutionSlot
 from toolkit.wrap.wraputils import clean_folders, split_into_sublists
 from toolkit.wrap.wraputils import wrap_pipeline, process_ensemble_member
+from toolkit.utils.workflow_cli import parse_filter_basin_args, select_filter_sets_and_basins
+from toolkit.paths import synthetic_dataset_path
 
 
 ### Settings ###
@@ -37,10 +38,7 @@ ensemble_filters_path = repo_data_path / "configs" / "ensemble_filters.json"
 
 def main():
     # Parse command line arguments
-    parser = argparse.ArgumentParser(description='Execute WRAP simulations for specific filter-basin combinations')
-    parser.add_argument('--filter', help='Filter name to process (e.g., basic, cooler, hotter)')
-    parser.add_argument('--basin', help='Basin name to process (e.g., Colorado, Trinity, Brazos)')
-    args = parser.parse_args()
+    args = parse_filter_basin_args('Execute WRAP simulations for specific filter-basin combinations')
 
     with open(basins_path, "r") as f:
         BASINS = json.load(f)
@@ -48,22 +46,7 @@ def main():
     with open(ensemble_filters_path, "r") as f:
         ENSEMBLE_CONFIG = json.load(f)
 
-    # Filter processing based on arguments
-    if args.filter:
-        filter_sets = [fs for fs in ENSEMBLE_CONFIG if fs["name"] == args.filter]
-        if not filter_sets:
-            print(f"Error: Filter '{args.filter}' not found in configuration")
-            return
-    else:
-        filter_sets = ENSEMBLE_CONFIG
-
-    if args.basin:
-        if args.basin not in BASINS:
-            print(f"Error: Basin '{args.basin}' not found in configuration")
-            return
-        basins = {args.basin: BASINS[args.basin]}
-    else:
-        basins = BASINS
+    filter_sets, basins = select_filter_sets_and_basins(BASINS, ENSEMBLE_CONFIG, args.filter, args.basin)
 
     # Process selected combinations
     for filter_set in filter_sets:
@@ -76,7 +59,7 @@ def main():
             # Initialize paths
             flo_file = Path(repo_data_path) / basin["flo_file"]
             base_name = flo_file.stem
-            synthetic_data_path = outputs_path / "bayesian_hmm" / f"{filter_name}" / f"{basin_name.lower()}" / f"{filter_name}_{basin_name.lower()}_synthetic_dataset.nc"
+            synthetic_data_path = synthetic_dataset_path(filter_name, basin_name)
             synthetic_flo_output_path = outputs_path / "wrap_results" / filter_name / basin_name / "synthetic_flos"
             diversions_csvs_path = outputs_path / "wrap_results" / filter_name / basin_name / "diversions"
             reservoirs_csvs_path = outputs_path / "wrap_results" / filter_name / basin_name / "reservoirs"
@@ -119,7 +102,7 @@ def main():
 
                 # Create and start processes
                 with multiprocessing.Pool(processes=num_processes) as pool:
-                    results = pool.map(process_ensemble_member, ensemble_args)
+                    pool.map(process_ensemble_member, ensemble_args)
 
             ## Run wrap pipeline with multiprocessing ##
             if len(list(os.listdir(diversions_csvs_path))) == 0 or len(list(os.listdir(reservoirs_csvs_path))) == 0:

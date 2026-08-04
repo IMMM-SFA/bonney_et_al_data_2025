@@ -2,15 +2,15 @@
 This script trains Bayesian Hidden Markov Models (HMM) on the 9505 data.
 """
 import numpy as np
-from pathlib import Path
 import json
-import argparse
 import matplotlib.pyplot as plt
 from toolkit.hmm.model import BayesianStreamflowHMM
 from toolkit.data.ninetyfiveofive import load_doe_data, load_historical_data
 from toolkit.hmm.utils import generate_prior_config_from_historical
 from toolkit.graphics.hmm import plot_results, plot_diagnostics, plot_hmm_diagnostics
 from toolkit.utils.random_seeds import set_random_seeds, get_seed
+from toolkit.utils.workflow_cli import parse_filter_basin_args, select_filter_sets_and_basins
+from toolkit.paths import basin_filter_dir
 from toolkit import repo_data_path, outputs_path
 import arviz as az
 
@@ -24,7 +24,6 @@ PERIOD = "2020_2059" # Time period of 9505 data used for training
 ### Path Configuration ###
 basins_path = repo_data_path / "configs" / "basins.json"
 ensemble_filters_path = repo_data_path / "configs" / "ensemble_filters.json"
-# ensemble_filters_path = repo_data_path / "configs" / "ensemble_filters.json"
 nc_file_path = outputs_path / "9505" / "reach_subset_combined" / f"master_streamflow_{PERIOD}_af.nc"
 
 ### Functions ###
@@ -35,7 +34,7 @@ def train_basin_hmm(basin_name, basin, ensemble_filters, filter_name, generate_d
     gage_name = basin["gage_name"]
     reach_id = basin["reach_id"]
     flo_file = repo_data_path / basin["flo_file"]
-    output_dir = outputs_path / "bayesian_hmm" / filter_name / f"{basin_name.lower()}"
+    output_dir = basin_filter_dir(filter_name, basin_name)
     output_dir.mkdir(parents=True, exist_ok=True)
     
     # Load historical data separately
@@ -133,15 +132,15 @@ def train_basin_hmm(basin_name, basin, ensemble_filters, filter_name, generate_d
     # 2. Generate comprehensive diagnostic plots
     if generate_diagnostics:
         # General MCMC diagnostics
-        print(f"  Generating MCMC diagnostics...")
+        print("  Generating MCMC diagnostics...")
         plot_diagnostics(model.idata, output_dir=output_dir)
-        
+
         # HMM-specific diagnostics
-        print(f"  Generating HMM-specific diagnostics...")
+        print("  Generating HMM-specific diagnostics...")
         plot_hmm_diagnostics(model.idata, doe_data, output_dir=output_dir)
-        
+
         # Model results with predicted states
-        print(f"  Generating model results plots...")
+        print("  Generating model results plots...")
         predicted_states = model.predict_states(doe_data)
         plot_results(model.idata, doe_data, predicted_states, n_states=2, output_dir=output_dir)
             
@@ -153,11 +152,8 @@ def train_basin_hmm(basin_name, basin, ensemble_filters, filter_name, generate_d
 
 def main():
     # Parse command line arguments
-    parser = argparse.ArgumentParser(description='Train HMM models for specific filter-basin combinations')
-    parser.add_argument('--filter', help='Filter name to process (e.g., basic, cooler, hotter)')
-    parser.add_argument('--basin', help='Basin name to process (e.g., Colorado, Trinity, Brazos)')
-    args = parser.parse_args()
-    
+    args = parse_filter_basin_args('Train HMM models for specific filter-basin combinations')
+
     # Load basin configuration from JSON
     with open(basins_path, "r") as f:
         BASINS = json.load(f)
@@ -166,22 +162,7 @@ def main():
     with open(ensemble_filters_path, "r") as f:
         ENSEMBLE_CONFIG = json.load(f)
 
-    # Filter processing based on arguments
-    if args.filter:
-        filter_sets = [fs for fs in ENSEMBLE_CONFIG if fs["name"] == args.filter]
-        if not filter_sets:
-            print(f"Error: Filter '{args.filter}' not found in configuration")
-            return
-    else:
-        filter_sets = ENSEMBLE_CONFIG
-    
-    if args.basin:
-        if args.basin not in BASINS:
-            print(f"Error: Basin '{args.basin}' not found in configuration")
-            return
-        basins = {args.basin: BASINS[args.basin]}
-    else:
-        basins = BASINS
+    filter_sets, basins = select_filter_sets_and_basins(BASINS, ENSEMBLE_CONFIG, args.filter, args.basin)
 
     # Process selected combinations
     for filter_set in filter_sets:

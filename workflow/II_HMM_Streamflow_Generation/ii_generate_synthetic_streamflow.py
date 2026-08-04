@@ -4,14 +4,14 @@ This script loads trained HMM models and generates synthetic streamflow.
 import os
 import numpy as np
 import pandas as pd
-from pathlib import Path
 import json
-import argparse
 
 from toolkit.hmm.model import BayesianStreamflowHMM
 from toolkit.data.ninetyfiveofive import load_9505_stencil_pool
 from toolkit.utils.random_seeds import set_random_seeds, get_seed
 from toolkit.utils.fixed_control_points import split_free_and_fixed, splice_fixed_columns
+from toolkit.utils.workflow_cli import parse_filter_basin_args, select_filter_sets_and_basins
+from toolkit.paths import basin_filter_dir, synthetic_dataset_path
 from toolkit import repo_data_path, outputs_path
 from toolkit.wrap.io import flo_to_df
 from toolkit.data.io import save_netcdf_format, load_netcdf_format
@@ -34,8 +34,6 @@ BIAS_CORRECTION = True
 basins_path = repo_data_path / "configs" / "basins.json"
 ensemble_filters_path = repo_data_path / "configs" / "ensemble_filters.json"
 
-output_dir = outputs_path / "bayesian_hmm"
-
 pcp_reach_mapping_path = outputs_path / "9505" / "pcp_to_reach_mapping.csv"
 ninetyfiveofive_nc_dir = outputs_path / "9505" / "reach_subset_combined"
 NINETYFIVEOFIVE_NC_PATHS = {
@@ -50,7 +48,7 @@ def generate_synthetic_streamflow(basin_name, basin, ensemble_filters, filter_na
     gage_name = basin["gage_name"]
     reach_id = basin["reach_id"]
     flo_file = repo_data_path / basin["flo_file"]
-    model_path = output_dir / f"{filter_name}" / f"{basin_name.lower()}" / f"{basin_name}_{filter_name}_model"
+    model_path = basin_filter_dir(filter_name, basin_name) / f"{basin_name}_{filter_name}_model"
 
     if not (model_path.with_suffix(".nc")).exists():
         print(f"Model not found at {model_path}. Please run the training script first.")
@@ -93,7 +91,7 @@ def generate_synthetic_streamflow(basin_name, basin, ensemble_filters, filter_na
     model = BayesianStreamflowHMM.load(str(model_path))
 
     # Generate synthetic streamflow
-    synthetic_h5_path = output_dir / f"{filter_name}" /f"{basin_name.lower()}" / f"{filter_name}_{basin_name.lower()}_synthetic_dataset.nc"
+    synthetic_h5_path = synthetic_dataset_path(filter_name, basin_name)
 
     if os.path.exists(synthetic_h5_path) and not FORCE_RECOMPUTE:
         synthetic_streamflow_dict = load_netcdf_format(synthetic_h5_path)
@@ -137,10 +135,7 @@ def generate_synthetic_streamflow(basin_name, basin, ensemble_filters, filter_na
 ### Main ###
 
 def main():
-    parser = argparse.ArgumentParser(description='Generate synthetic streamflow for specific filter-basin combinations')
-    parser.add_argument('--filter', help='Filter name to process (e.g., basic, cooler, hotter)')
-    parser.add_argument('--basin', help='Basin name to process (e.g., Colorado, Trinity, Brazos)')
-    args = parser.parse_args()
+    args = parse_filter_basin_args('Generate synthetic streamflow for specific filter-basin combinations')
 
     with open(basins_path, "r") as f:
         BASINS = json.load(f)
@@ -148,21 +143,7 @@ def main():
     with open(ensemble_filters_path, "r") as f:
         ENSEMBLE_CONFIG = json.load(f)
 
-    if args.filter:
-        filter_sets = [fs for fs in ENSEMBLE_CONFIG if fs["name"] == args.filter]
-        if not filter_sets:
-            print(f"Error: Filter '{args.filter}' not found in configuration")
-            return
-    else:
-        filter_sets = ENSEMBLE_CONFIG
-    
-    if args.basin:
-        if args.basin not in BASINS:
-            print(f"Error: Basin '{args.basin}' not found in configuration")
-            return
-        basins = {args.basin: BASINS[args.basin]}
-    else:
-        basins = BASINS
+    filter_sets, basins = select_filter_sets_and_basins(BASINS, ENSEMBLE_CONFIG, args.filter, args.basin)
 
     for filter_set in filter_sets:
         filter_name = filter_set["name"]

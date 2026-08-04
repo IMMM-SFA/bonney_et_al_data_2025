@@ -5,7 +5,6 @@ This script subsets the 9505 data to the reaches of interest and saves it to a N
 import xarray as xr
 import numpy as np
 import pandas as pd
-from pathlib import Path
 import os
 from toolkit import repo_data_path, outputs_path
 
@@ -120,74 +119,18 @@ def process_folder(folder, desired_reaches, force_compute=False):
 
     ds_out.to_netcdf(file_path)
     print(f"Saved: {file_path}")
-    """Processes all HUC8 files in a folder and combines streamflow data for specific reaches.
-    
-    Args:
-        folder: Path to the folder containing HUC8 files
-        desired_reaches: List of COMIDs to extract
-        force_compute: Whether to recompute if output already exists
-    """
-    folder_name = folder.name  # Use folder name for the output filename
-    print(f"Processing folder: {folder_name}")
-    
-    # check if output already exists
-    file_path = output_root / f"{folder_name}.nc"
-    if not force_compute and os.path.exists(file_path):
-        print(f"Folder {folder_name} already processed, skipping.")
-        return
 
-    results = []
-    
-    nc_files = list(folder.glob("*.nc"))
-    
-    for nc_file in nc_files:
-        result = process_huc8_file(nc_file, desired_reaches)
-        if result:
-            results.append(result)
-
-    if not results:
-        print(f"No valid data found in {folder_name}, skipping.")
-        return
-
-    # Combine data from all files
-    all_reaches = set()
-    for _, _, reach_data in results:
-        all_reaches.update(reach_data.keys())
-    
-    # Ensure time is consistent across all files
-    time_values = np.unique(np.concatenate([time for _, time, _ in results]))
-    
-    # Create arrays for each reach
-    reach_arrays = {}
-    for reach in all_reaches:
-        reach_arrays[reach] = np.full(len(time_values), np.nan)
-    
-    # Populate the arrays
-    for _, time_mn, reach_data in results:
-        time_idx = np.searchsorted(time_values, time_mn)
-        for reach, data in reach_data.items():
-            reach_arrays[reach][time_idx] = data
-    
-    # Create xarray dataset with each reach as a variable
-    ds_out = xr.Dataset(
-        {f"reach_{reach}": (["time_mn"], reach_arrays[reach]) 
-         for reach in all_reaches},
-        coords={"time_mn": time_values}
-    )
-
-    # Save to NetCDF
-    ds_out.to_netcdf(file_path)
-    print(f"Saved: {file_path}")
-
-def process_all_folders(data_root, desired_reaches):
+def process_all_folders(data_root, desired_reaches, force_compute=False):
     """Processes each model run folder separately and generates one aggregated NetCDF file per folder."""
     for folder in data_root.iterdir():
         if folder.is_dir():
-            process_folder(folder, desired_reaches)
+            process_folder(folder, desired_reaches, force_compute=force_compute)
 
 ### Main ###
 
-desired_reaches = list(desired_reaches.iloc[:, 1])
+def main():
+    reach_ids = list(desired_reaches.iloc[:, 1])
+    process_all_folders(data_root, desired_reaches=reach_ids)
 
-# Run processing
-process_all_folders(data_root, desired_reaches=desired_reaches)
+if __name__ == "__main__":
+    main()
