@@ -27,9 +27,8 @@ STENCIL_SOURCE = "historical"
 # 9505 period(s) (keys of NINETYFIVEOFIVE_NC_PATHS) to pool when STENCIL_SOURCE != "historical"
 STENCIL_PERIODS = ["2020_2059"]
 
-# Bias correction method from toolkit.hmm.bias_correction; None reproduces prior behavior
-BIAS_CORRECTION_METHOD = None
-BIAS_CORRECTION_KWARGS = {}
+# Apply toolkit.hmm.bias_correction (stretched-tail quantile mapping) before disaggregation
+BIAS_CORRECTION = True
 
 ### Path Configuration ###
 basins_path = repo_data_path / "configs" / "basins.json"
@@ -110,9 +109,8 @@ def generate_synthetic_streamflow(basin_name, basin, ensemble_filters, filter_na
             h5_path=synthetic_h5_path,
             n_ensembles=N_ENSEMBLES,
             outflow_index=outflow_index,
-            bias_correction_method=BIAS_CORRECTION_METHOD,
+            bias_correction=BIAS_CORRECTION,
             historical_annual=historical_annual,
-            bias_correction_kwargs=BIAS_CORRECTION_KWARGS,
         )
 
         if fixed_sites:

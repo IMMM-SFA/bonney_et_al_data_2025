@@ -5,6 +5,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from toolkit.hmm.bias_correction import _stretch_historical_tails
 from toolkit.hmm.model import BayesianStreamflowHMM
 
 
@@ -110,9 +111,9 @@ def test_synthetic_horizon_follows_num_years_not_stencil_pool_size():
 
 
 def test_bias_correction_off_matches_reference_single_pass_implementation():
-    """With bias_correction_method=None, the two-pass implementation must be bit-for-bit
-    identical to the pre-refactor single loop, since disaggregation's rng is independent
-    of the global numpy random state used for posterior/state sampling."""
+    """With bias_correction=False, the two-pass implementation must be bit-for-bit identical
+    to the pre-refactor single loop, since disaggregation's rng is independent of the global
+    numpy random state used for posterior/state sampling."""
     n_sites = 2
     num_years = 5
     n_ensembles = 4
@@ -139,9 +140,9 @@ def test_bias_correction_off_matches_reference_single_pass_implementation():
     np.testing.assert_array_equal(result["realization_meta"], reference["realization_meta"])
 
 
-def test_bias_correction_delta_scales_annual_totals_before_disaggregation():
-    """Corrected outflow-site annual totals should match the delta-scaling historical mean,
-    which the fixture's raw HMM parameters are nowhere near."""
+def test_bias_correction_pulls_annual_totals_into_historical_range():
+    """Corrected outflow-site annual totals must fall within the tail-stretched historical
+    range, which the fixture's raw HMM parameters (annual values ~1-10) are nowhere near."""
     n_sites = 2
     num_years = 5
     n_ensembles = 3
@@ -158,14 +159,16 @@ def test_bias_correction_delta_scales_annual_totals_before_disaggregation():
         site_names=[f"site_{i}" for i in range(n_sites)],
         time_index=list(time_index),
         outflow_index=0,
-        bias_correction_method="delta",
+        bias_correction=True,
         historical_annual=historical_annual,
     )
 
     streamflow = result["streamflow"]  # (n_ensembles, n_months, n_sites)
     outflow_annual = streamflow[:, :, 0].reshape(n_ensembles, num_years, 12).sum(axis=2)
 
-    assert outflow_annual.mean() == pytest.approx(historical_annual.mean(), rel=1e-6)
+    stretched_hist = _stretch_historical_tails(historical_annual)
+    assert outflow_annual.min() >= stretched_hist.min() - 1e-6
+    assert outflow_annual.max() <= stretched_hist.max() + 1e-6
 
 
 def test_bias_correction_requires_historical_annual():
@@ -180,5 +183,5 @@ def test_bias_correction_requires_historical_annual():
             site_names=["site_0", "site_1"],
             time_index=list(pd.date_range("2020-01", periods=3 * 12, freq="MS")),
             outflow_index=0,
-            bias_correction_method="delta",
+            bias_correction=True,
         )

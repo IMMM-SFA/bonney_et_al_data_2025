@@ -647,9 +647,8 @@ class BayesianStreamflowHMM:
         site_names: Optional[list] = None,
         time_index: Optional[list] = None,
         outflow_index: int = -1,
-        bias_correction_method: Optional[str] = None,
+        bias_correction: bool = False,
         historical_annual: Optional[np.ndarray] = None,
-        bias_correction_kwargs: Optional[Dict[str, Any]] = None,
     ) -> None:
         """
         Generate multiple synthetic streamflow ensemble members and save to HDF5.
@@ -678,14 +677,11 @@ class BayesianStreamflowHMM:
             Time index for streamflow
         outflow_index : int, default=-1
             Index of the outflow control point site for disaggregation
-        bias_correction_method : Optional[str], default=None
-            Named method from `toolkit.hmm.bias_correction`, applied to the ensemble's raw
-            annual trajectories before disaggregation. None (default) is a no-op.
+        bias_correction : bool, default=False
+            Apply `toolkit.hmm.bias_correction` to the ensemble's raw annual trajectories
+            before disaggregation.
         historical_annual : Optional[np.ndarray], default=None
-            Historical annual streamflow at the outflow gage. Required if
-            `bias_correction_method` is set.
-        bias_correction_kwargs : Optional[Dict[str, Any]], default=None
-            Extra keyword arguments forwarded to the chosen bias correction method.
+            Historical annual streamflow at the outflow gage. Required if bias_correction=True.
 
         Returns
         -------
@@ -703,8 +699,8 @@ class BayesianStreamflowHMM:
         logger.info("Generating synthetic streamflow ensemble...")
         if self.idata is None:
             raise ValueError("Model must be fit before generating synthetic data")
-        if bias_correction_method is not None and historical_annual is None:
-            raise ValueError("historical_annual is required when bias_correction_method is set")
+        if bias_correction and historical_annual is None:
+            raise ValueError("historical_annual is required when bias_correction=True")
         if random_seed is not None:
             np.random.seed(random_seed)
         disaggregation_rng = np.random.default_rng(random_seed)
@@ -765,12 +761,8 @@ class BayesianStreamflowHMM:
             annual_states[:, ens] = states
         hmm_params = np.stack(hmm_params, axis=0)
 
-        annual_synthetic_all = apply_bias_correction(
-            bias_correction_method,
-            historical_annual,
-            annual_synthetic_all,
-            **(bias_correction_kwargs or {}),
-        )
+        if bias_correction:
+            annual_synthetic_all = apply_bias_correction(historical_annual, annual_synthetic_all)
 
         # Pass 2: disaggregate each (possibly corrected) trajectory, via an rng independent
         # of the global numpy random state used for posterior/state sampling above.
