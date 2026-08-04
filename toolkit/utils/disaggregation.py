@@ -1,18 +1,3 @@
-"""Analog-year "stamp" disaggregation: shared machinery behind both streamflow
-disaggregation (`toolkit.hmm.disaggregation.disaggregate_annual_to_monthly`) and
-synthetic EVA generation (`toolkit.wrap.eva`).
-
-The common idea: given a "driver" series with a historical record and a synthetic
-annual value, find the historical year whose annual driver total is closest (k-nearest,
-inverse-rank-weighted sample), then reuse that year's historical monthly *pattern* to
-produce synthetic monthly values for some target series -- either the driver's own
-pattern rescaled to hit the synthetic annual total, another series scaled by its ratio
-to the driver, or another series reused verbatim with no rescaling at all.
-
-Which of those three a given target needs depends on its physical relationship to the
-driver, not on the mechanics of picking the analog year -- see `Disaggregator` below.
-"""
-
 from typing import Optional, Union
 
 import numpy as np
@@ -23,12 +8,14 @@ def select_analog_year_indices(
     synthetic_annual_values: np.ndarray,
     historical_annual_values: np.ndarray,
     rng: np.random.Generator,
+    weighting: str = "inverse_rank",
 ) -> np.ndarray:
     """For each synthetic annual value, sample one analog historical year.
 
     Finds the k = sqrt(n_hist_years) nearest historical years by absolute distance to
-    the synthetic annual value, then samples one via inverse-rank weighting (closest
-    neighbor most likely, weights 1/1, 1/2, ..., 1/k).
+    the synthetic annual value, then samples one via `weighting`:
+    - "inverse_rank": closest neighbor most likely, weights 1/1, 1/2, ..., 1/k.
+    - "uniform": every one of the k neighbors equally likely.
 
     Parameters
     ----------
@@ -37,6 +24,8 @@ def select_analog_year_indices(
     historical_annual_values : np.ndarray
         Shape (hist_years,).
     rng : np.random.Generator
+    weighting : str, default="inverse_rank"
+        "inverse_rank" or "uniform".
 
     Returns
     -------
@@ -45,8 +34,13 @@ def select_analog_year_indices(
     """
     hist_years = len(historical_annual_values)
     k = int(np.sqrt(hist_years))
-    neighbor_probabilities = np.array([1 / (j + 1) for j in range(k)])
-    neighbor_probabilities = neighbor_probabilities / np.sum(neighbor_probabilities)
+    if weighting == "inverse_rank":
+        neighbor_probabilities = np.array([1 / (j + 1) for j in range(k)])
+        neighbor_probabilities = neighbor_probabilities / np.sum(neighbor_probabilities)
+    elif weighting == "uniform":
+        neighbor_probabilities = np.full(k, 1 / k)
+    else:
+        raise ValueError(f"Unknown weighting: {weighting!r}")
 
     distances = np.abs(np.subtract.outer(synthetic_annual_values, historical_annual_values))
     neighbor_indices = np.empty(len(synthetic_annual_values), dtype=int)
@@ -79,11 +73,21 @@ class Disaggregator:
     `target_historical` for any `stamp_*` call may be a single Series or a DataFrame of
     several target columns computed at once (vectorized); either way it must share the
     exact same historical monthly DatetimeIndex as the driver.
+
+    `weighting` controls how `select_analog_years` samples among the k nearest neighbors
+    -- see `select_analog_year_indices`. Default "inverse_rank" favors closer years;
+    "uniform" gives every one of the k neighbors equal odds.
     """
 
-    def __init__(self, driver_historical: pd.Series, rng: Optional[np.random.Generator] = None):
+    def __init__(
+        self,
+        driver_historical: pd.Series,
+        rng: Optional[np.random.Generator] = None,
+        weighting: str = "inverse_rank",
+    ):
         self.driver_historical = driver_historical.astype(float)
         self.rng = rng if rng is not None else np.random.default_rng()
+        self.weighting = weighting
 
         self._hist_years = np.sort(self.driver_historical.index.year.unique())
         self._year_to_pos = {year: pos for pos, year in enumerate(self._hist_years)}
@@ -102,6 +106,7 @@ class Disaggregator:
             driver_synthetic_annual.to_numpy(),
             self._driver_annual,
             self.rng,
+            weighting=self.weighting,
         )
         neighbor_years = self._hist_years[positions]
         return pd.Series(neighbor_years, index=driver_synthetic_annual.index, name="analog_year")
