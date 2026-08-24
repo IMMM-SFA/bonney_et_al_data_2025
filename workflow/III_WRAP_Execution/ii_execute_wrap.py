@@ -19,14 +19,18 @@ from toolkit.paths import synthetic_dataset_path
 ### Settings ###
 # Use a conservative number of processes to avoid system freeze
 # WRAP simulations are resource-intensive
-num_processes = 4  # Use at most 2 processes or half your CPU cores
+num_processes = 3  # Use at most 2 processes or half your CPU cores
+
+N_ENSEMBLES = 100  # Number of realizations to run through WRAP; None to run all available
+
+DAT_SUFFIX = "_initial_storage_median_historical.dat"
 
 ### Path Configuration ###
 # On HPC, point WRAP_EXEC_PATH to a tmpfs mount (e.g. /dev/shm/wrap_exec) to
 # keep WRAP's ~0.5 GB per-run .OUT writes in RAM and avoid hammering the
 # parallel filesystem. The directory is auto-created by WRAPExecutionSlot.setup().
 WRAP_EXEC_PATH = Path(repo_data_path) / "WRAP" / "wrap_execution_directories"
-WRAP_SIM_PATH = WRAP_EXEC_PATH / ".." / "SIM.exe"
+WRAP_SIM_PATH = Path(repo_data_path) / "WRAP" / "SIM.exe"
 
 basins_path = repo_data_path / "configs" / "basins.json"
 ensemble_filters_path = repo_data_path / "configs" / "ensemble_filters.json"
@@ -71,7 +75,7 @@ def main():
 
             # Reset execution slots and clean output directories from previous runs
             slots = [
-                LocalWRAPExecutionSlot(WRAP_EXEC_PATH / f"execution_folder_{i}", flo_file.parent, WRAP_SIM_PATH, base_name)
+                LocalWRAPExecutionSlot(WRAP_EXEC_PATH / f"execution_folder_{i}", flo_file.parent, WRAP_SIM_PATH, base_name, dat_suffix=DAT_SUFFIX)
                 for i in range(num_processes)
             ]
             for slot in slots:
@@ -89,7 +93,7 @@ def main():
             if len(os.listdir(synthetic_flo_output_path)) == 0:
                 # Load synthetic streamflow data
                 synthetic_data_dict = load_netcdf_format(synthetic_data_path)
-                streamflow = synthetic_data_dict["streamflow"]
+                streamflow = synthetic_data_dict["streamflow"][:N_ENSEMBLES]
                 streamflow_index = synthetic_data_dict["streamflow_index"]
                 streamflow_columns = synthetic_data_dict["streamflow_columns"]
                 n_ensembles, n_months, n_sites = streamflow.shape

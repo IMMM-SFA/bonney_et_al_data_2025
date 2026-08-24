@@ -19,16 +19,34 @@ class WRAPExecutionSlot(ABC):
 
     _STATIC_EXTENSIONS = {".dat", ".dis", ".eva", ".fad", ".his"}
 
-    def __init__(self, slot_dir, wam_path, base_name="C3"):
+    def __init__(self, slot_dir, wam_path, base_name="C3", dat_suffix=".dat"):
+        """
+        Parameters
+        ----------
+        dat_suffix : str, default ".dat"
+            Selects which .DAT variant to stage as the WAM's input file, for basins
+            with more than one available.
+        """
         self.slot_dir = Path(slot_dir)
         self.wam_path = Path(wam_path)
         self.base_name = base_name
+        self.dat_suffix = dat_suffix
 
     def setup(self):
         """Create the slot directory and populate it with static WAM config files."""
         self.slot_dir.mkdir(parents=True, exist_ok=True)
+
+        dat_target_name = f"{self.base_name}{self.dat_suffix}".lower()
+        dat_matches = [f for f in self.wam_path.iterdir() if f.name.lower() == dat_target_name]
+        if len(dat_matches) != 1:
+            raise FileNotFoundError(
+                f"Expected exactly 1 file named {dat_target_name!r} "
+                f"(case-insensitive) in {self.wam_path}, found {len(dat_matches)}: {dat_matches}"
+            )
+        shutil.copy2(dat_matches[0], self.slot_dir / f"{self.base_name}.dat")
+
         for f in self.wam_path.iterdir():
-            if f.suffix.lower() in self._STATIC_EXTENSIONS:
+            if f.suffix.lower() in self._STATIC_EXTENSIONS and f.suffix.lower() != ".dat":
                 shutil.copy2(f, self.slot_dir / f.name)
 
     def teardown(self):
@@ -64,8 +82,8 @@ class WRAPExecutionSlot(ABC):
 class LocalWRAPExecutionSlot(WRAPExecutionSlot):
     """Runs WRAP using wine64 installed directly on the host."""
 
-    def __init__(self, slot_dir, wam_path, wrap_exe_path, base_name="C3"):
-        super().__init__(slot_dir, wam_path, base_name)
+    def __init__(self, slot_dir, wam_path, wrap_exe_path, base_name="C3", dat_suffix=".dat"):
+        super().__init__(slot_dir, wam_path, base_name, dat_suffix)
         self.wrap_exe_path = Path(wrap_exe_path)
 
     def _invoke_wrap(self):
@@ -89,8 +107,8 @@ class SingularityWRAPExecutionSlot(WRAPExecutionSlot):
 
     _WRAP_EXE = "/wrap/SIM.exe"
 
-    def __init__(self, slot_dir, wam_path, sif_path, base_name="C3"):
-        super().__init__(slot_dir, wam_path, base_name)
+    def __init__(self, slot_dir, wam_path, sif_path, base_name="C3", dat_suffix=".dat"):
+        super().__init__(slot_dir, wam_path, base_name, dat_suffix)
         self.sif_path = Path(sif_path)
         # Singularity instance names must be alphanumeric + underscores
         self._instance_name = re.sub(r"[^a-zA-Z0-9]", "_", self.slot_dir.name)
