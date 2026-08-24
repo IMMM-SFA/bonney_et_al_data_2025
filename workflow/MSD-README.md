@@ -158,7 +158,6 @@ data/
 │   ├── ensemble_filters.json - Filters for 9505 ensemble subsets used in the experiment.
 │   ├── hmm_synthetic_data_metadata.json - Descriptive metadata for the synthetic streamflow NetCDF outputs.
 │   ├── random_seeds.json - Random seeds used for reproducibility across multiple steps of the experiment.
-│   ├── reaches_of_interest.csv - Reaches extracted from the 9505 data for downstream use in analysis.
 │   └── wrap_variable_metadata.json - Descriptive metadata for the water management outputs of WRAP.
 ├── geospatial/
 │   ├── 9505_shapefiles/ - Shapefiles related to the DOE 9505 dataset.
@@ -183,8 +182,6 @@ data/
 **`hmm_synthetic_data_metadata.json`** contains descriptive metadata for the variables and coordinates in the synthetic streamflow NetCDF outputs.
 
 **`wrap_variable_metadata.json`** contains metadata for all WRAP output variables, including units, descriptions, and names for diversion and reservoir variables.
-
-**`reaches_of_interest.csv`** lists the specific river reaches (COMIDs) extracted from the 9505 dataset for each basin.
 
 **`random_seeds.json`** contains random seeds used for reproducibility.
 
