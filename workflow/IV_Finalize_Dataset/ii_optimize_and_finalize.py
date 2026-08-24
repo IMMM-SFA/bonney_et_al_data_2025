@@ -20,7 +20,7 @@ import shutil
 
 from toolkit import repo_data_path, outputs_path
 from toolkit.utils.workflow_cli import parse_filter_basin_args, select_filter_sets_and_basins
-from toolkit.paths import synthetic_dataset_path
+from toolkit.paths import wrap_augmented_dataset_path, archived_dataset_path
 
 ### Settings ###
 # Compression settings
@@ -229,7 +229,7 @@ def optimize_single_file(input_path, output_path):
         }
         
     except Exception as e:
-        print(f"\n❌ ERROR during optimization: {e}")
+        print(f"\n ERROR during optimization: {e}")
         
         return {
             'file': str(output_path),
@@ -254,7 +254,7 @@ def process_filter_basin_combination(args):
     filter_name, basin_name = args
 
     # Construct input NetCDF file path
-    input_path = synthetic_dataset_path(filter_name, basin_name)
+    input_path = wrap_augmented_dataset_path(filter_name, basin_name)
     nc_filename = input_path.name
 
     if not input_path.exists():
@@ -266,7 +266,7 @@ def process_filter_basin_combination(args):
         }
     
     # Construct output path in archive destination
-    output_path = archive_path / basin_name / nc_filename
+    output_path = archived_dataset_path(filter_name, basin_name)
     
     return optimize_single_file(input_path, output_path)
 
@@ -330,7 +330,7 @@ def main():
     if failed:
         print("\nFailed files:")
         for r in failed:
-            print(f"  ❌ {Path(r['file']).name}: {r.get('error', 'Unknown error')}")
+            print(f"  {Path(r['file']).name}: {r.get('error', 'Unknown error')}")
         raise Exception("Failed to optimize some files")
     
     # Finalize archive with README and data folder
