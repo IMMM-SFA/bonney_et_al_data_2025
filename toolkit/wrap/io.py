@@ -22,9 +22,20 @@ def df_to_evp(evap_df: DataFrame, file_name: str):
             year_df = evap_df[evap_df.index.year == year]
             for site in sites:
                 line = f"{site}{year:>8}"
-                for num in year_df[site]:
+                for month, num in zip(year_df.index.month, year_df[site]):
                     num = float(num)
-                    line += f"{num: 8.3f}"
+                    if not np.isfinite(num):
+                        raise ValueError(
+                            f"df_to_evp: non-finite value ({num}) for site {site!r}, "
+                            f"{year}-{month:02d}; WRAP's Fortran reader can't parse that."
+                        )
+                    field = f"{num: 8.3f}"
+                    if len(field) > 8:
+                        raise ValueError(
+                            f"df_to_evp: value {num} for site {site!r}, {year}-{month:02d} "
+                            f"doesn't fit the fixed 8-char EVA field ({field!r})."
+                        )
+                    line += field
                 line += "\n"
                 file.write(line)
 
