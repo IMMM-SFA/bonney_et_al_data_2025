@@ -8,7 +8,6 @@ import os
 import multiprocessing
 import numpy as np
 import pandas as pd
-from pathlib import Path
 import json
 import xarray as xr
 from toolkit import repo_data_path, outputs_path
@@ -22,10 +21,6 @@ from toolkit.paths import synthetic_dataset_path, wrap_augmented_dataset_path
 num_processes = 4  # Use at most 4 processes or half your CPU cores
 
 ### Path Configuration ###
-WRAP_EXEC_PATH = Path(repo_data_path) / "WRAP" / "wrap_execution_directories"
-WRAP_SIM_PATH = WRAP_EXEC_PATH / "SIM.exe"
-
-
 metadata_path = repo_data_path / "configs" / "wrap_variable_metadata.json"
 basins_path = repo_data_path / "configs" / "basins.json"
 ensemble_filters_path = repo_data_path / "configs" / "ensemble_filters.json"
