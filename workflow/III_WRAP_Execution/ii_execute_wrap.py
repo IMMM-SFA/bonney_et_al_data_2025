@@ -19,7 +19,7 @@ from toolkit.paths import synthetic_dataset_path
 ### Settings ###
 # Use a conservative number of processes to avoid system freeze
 # WRAP simulations are resource-intensive
-num_processes = 3  # Use at most 2 processes or half your CPU cores
+num_processes = 3
 
 N_ENSEMBLES = 100  # Number of realizations to run through WRAP; None to run all available
 

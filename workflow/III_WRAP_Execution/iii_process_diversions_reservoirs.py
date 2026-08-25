@@ -18,7 +18,7 @@ from toolkit.paths import synthetic_dataset_path, wrap_augmented_dataset_path
 ### Settings ###
 # Use a conservative number of processes to avoid system freeze
 # Processing CSV files and NetCDF operations are resource-intensive
-num_processes = 4  # Use at most 4 processes or half your CPU cores
+num_processes = 4
 
 ### Path Configuration ###
 metadata_path = repo_data_path / "configs" / "wrap_variable_metadata.json"
