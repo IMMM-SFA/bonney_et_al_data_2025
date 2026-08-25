@@ -247,6 +247,8 @@ def print_summary(results: list):
 ### Main ###
 
 def main():
+    print(f"Settings: INCLUDE_WRAP_VARIABLES={INCLUDE_WRAP_VARIABLES}")
+
     # Parse command line arguments
     args = parse_filter_basin_args('Validate WRAP outputs for specific filter-basin combinations')
 

@@ -41,6 +41,9 @@ ensemble_filters_path = repo_data_path / "configs" / "ensemble_filters.json"
 ### Main ###
 
 def main():
+    print(f"Settings: num_processes={num_processes}, N_ENSEMBLES={N_ENSEMBLES}, "
+          f"DAT_SUFFIX={DAT_SUFFIX!r}")
+
     # Parse command line arguments
     args = parse_filter_basin_args('Execute WRAP simulations for specific filter-basin combinations')
 

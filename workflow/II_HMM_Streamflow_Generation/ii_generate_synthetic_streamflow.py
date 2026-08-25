@@ -135,6 +135,10 @@ def generate_synthetic_streamflow(basin_name, basin, ensemble_filters, filter_na
 ### Main ###
 
 def main():
+    print(f"Settings: FORCE_RECOMPUTE={FORCE_RECOMPUTE}, LOG_TRANSFORM={LOG_TRANSFORM}, "
+          f"N_ENSEMBLES={N_ENSEMBLES}, STENCIL_SOURCE={STENCIL_SOURCE!r}, "
+          f"STENCIL_PERIODS={STENCIL_PERIODS}, BIAS_CORRECTION={BIAS_CORRECTION}")
+
     args = parse_filter_basin_args('Generate synthetic streamflow for specific filter-basin combinations')
 
     with open(basins_path, "r") as f:

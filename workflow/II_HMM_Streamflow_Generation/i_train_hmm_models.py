@@ -151,6 +151,9 @@ def train_basin_hmm(basin_name, basin, ensemble_filters, filter_name, generate_d
 ### Main ###
 
 def main():
+    print(f"Settings: FORCE_RECOMPUTE={FORCE_RECOMPUTE}, LOG_TRANSFORM={LOG_TRANSFORM}, "
+          f"GENERATE_DIAGNOSTICS={GENERATE_DIAGNOSTICS}, PERIOD={PERIOD!r}")
+
     # Parse command line arguments
     args = parse_filter_basin_args('Train HMM models for specific filter-basin combinations')
 

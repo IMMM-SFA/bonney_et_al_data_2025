@@ -273,6 +273,9 @@ def process_filter_basin_combination(args):
 ### Main ###
 
 def main():
+    print(f"Settings: COMPRESSION_LEVEL={COMPRESSION_LEVEL}, USE_SHUFFLE={USE_SHUFFLE}, "
+          f"num_processes={num_processes}, archive_path={archive_path}")
+
     # Parse command line arguments
     args = parse_filter_basin_args('Optimize NetCDF files and prepare data archive')
 
