@@ -634,21 +634,51 @@ def out_to_dfs(out_file, dfs_to_parse=None):
     return result
 
 
-def process_right_sectors(dat_file_path, filter_sectors=True, sectors=None):
-    dat = pd.read_csv(dat_file_path)
+def process_right_sectors(water_rights, filter_sectors=True, sectors=None):
+    """Buckets raw WRAP `use` codes (e.g. "UTIRR", "LTMUN") from a water rights
+    DataFrame into broad sector categories via substring match.
+
+    :param water_rights: water rights DataFrame, e.g. from `dat_to_df`
+    :param filter_sectors: if True, drop rows whose `use` doesn't match any sector;
+        if False, keep every row and bucket unmatched `use` values as "OTHER"
+    :param sectors: sector codes to bucket `use` into, checked in order (default
+        ["IND", "IRR", "MIN", "MUN", "POW", "REC"])
+
+    :return: copy of `water_rights` with `use` replaced by its bucketed sector
+    """
+    if sectors is None:
+        sectors = ["IND", "IRR", "MIN", "MUN", "POW", "REC"]
+
+    def bucket_use(use):
+        if not isinstance(use, str):
+            return "OTHER"
+        for sector in sectors:
+            if sector in use:
+                return sector
+        return "OTHER"
+
+    water_rights = water_rights.copy()
+    water_rights["use"] = water_rights["use"].apply(bucket_use)
     if filter_sectors:
-        if sectors is None:
-            sectors = ["IND", "IRR", "MIN", "MUN", "POW", "REC"]
+        water_rights = water_rights[water_rights["use"].isin(sectors)]
 
-        def process_use(row):
-            for sector in sectors:
-                try:
-                    if sector in row.use:
-                        return sector
-                except TypeError:
-                    return "nan"
+    return water_rights
 
-        dat.use = dat.apply(process_use, axis=1)
-        dat = dat[dat.use.isin(sectors)]
-    
-    return dat
+
+def load_right_sector_priority(dat_file_path, sectors=None):
+    """Builds a per-water-right sector and priority lookup from a WRAP `.DAT` file.
+
+    :param dat_file_path: path to the WRAP `.DAT` file
+    :param sectors: sector codes to bucket the raw `use` field into, see
+        `process_right_sectors`
+
+    :return: DataFrame indexed by `water_right_identifier` with `sector` and
+        `priority_number` columns, one row per WR record
+    """
+    water_rights = dat_to_df(dat_file_path)
+    bucketed = process_right_sectors(water_rights, filter_sectors=False, sectors=sectors)
+    return (
+        bucketed[["water_right_identifier", "use", "priority_number"]]
+        .rename(columns={"use": "sector"})
+        .set_index("water_right_identifier")
+    )

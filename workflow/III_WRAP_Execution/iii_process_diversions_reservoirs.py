@@ -13,6 +13,7 @@ import xarray as xr
 from toolkit import repo_data_path, outputs_path
 from toolkit.utils.workflow_cli import parse_filter_basin_args, select_filter_sets_and_basins
 from toolkit.paths import synthetic_dataset_path, wrap_augmented_dataset_path
+from toolkit.wrap.io import load_right_sector_priority
 
 
 ### Settings ###
@@ -49,11 +50,25 @@ def process_filter_basin_combination(args):
     output_path = wrap_augmented_dataset_path(filter_name, basin_name)
     diversions_csvs_path = outputs_path / "wrap_results" / filter_name / basin_name / "diversions"
     reservoirs_csvs_path = outputs_path / "wrap_results" / filter_name / basin_name / "reservoirs"
+    dat_path = _resolve_dat_path(repo_data_path / basin["flo_file"])
 
     # Process diversions and reservoirs
-    process_diversions_and_reservoirs(synthetic_data_path, output_path, diversions_csvs_path, reservoirs_csvs_path, variable_metadata)
+    process_diversions_and_reservoirs(synthetic_data_path, output_path, diversions_csvs_path, reservoirs_csvs_path, variable_metadata, dat_path)
 
     return f"Successfully processed {filter_name} - {basin_name}"
+
+def _resolve_dat_path(flo_file_path):
+    """Finds the WAM's main `.dat` file next to its `.FLO` file, matching filenames
+    case-insensitively (basin WAM directories mix case, e.g. `Trin3.flo` next to
+    `trin3.dat`) the same way `WRAPExecutionSlot.setup()` stages it for WRAP."""
+    target_name = f"{flo_file_path.stem}.dat".lower()
+    matches = [f for f in flo_file_path.parent.iterdir() if f.name.lower() == target_name]
+    if len(matches) != 1:
+        raise FileNotFoundError(
+            f"Expected exactly 1 file named {target_name!r} (case-insensitive) "
+            f"in {flo_file_path.parent}, found {len(matches)}: {matches}"
+        )
+    return matches[0]
 
 def _group_files_by_variable(csvs_path):
     """Groups a directory of `synthflow_<N>_<variable>.csv` files by variable name,
@@ -113,7 +128,29 @@ def _build_variable_dataarrays(csvs_path, file_groups, dim_name, id_coord,
         )
     return dataarrays
 
-def process_diversions_and_reservoirs(synthetic_data_path, output_path, diversions_csvs_path, reservoirs_csvs_path, variable_metadata):
+def _build_right_metadata_dataarrays(right_id_coord, dat_path, metadata_section):
+    """Loads sector/priority labels for each water right from the basin's `.dat`
+    file, aligned to `right_id_coord`. Rights present in the diversion output but
+    missing from the `.dat` lookup (shouldn't normally happen) get "UNKNOWN"."""
+    lookup = load_right_sector_priority(dat_path)
+    aligned = lookup.reindex(right_id_coord.values).fillna("UNKNOWN")
+
+    dataarrays = {}
+    for column in ["sector", "priority_number"]:
+        metadata = metadata_section[column]
+        dataarrays[column] = xr.DataArray(
+            aligned[column].to_numpy(),
+            dims=['right_id'],
+            coords={'right_id': right_id_coord},
+            attrs={
+                'long_name': metadata['long_name'],
+                'units': metadata['units'],
+                'description': metadata['description'],
+            }
+        )
+    return dataarrays
+
+def process_diversions_and_reservoirs(synthetic_data_path, output_path, diversions_csvs_path, reservoirs_csvs_path, variable_metadata, dat_path):
     """
     Combine diversions/reservoirs CSV files with the synthetic streamflow data into
     a single WRAP-augmented NetCDF, written fresh to output_path.
@@ -128,6 +165,9 @@ def process_diversions_and_reservoirs(synthetic_data_path, output_path, diversio
         Path to directory containing diversions CSV files
     reservoirs_csvs_path : Path
         Path to directory containing reservoirs CSV files
+    dat_path : Path
+        Path to the basin's WRAP `.dat` file, used to attach sector/priority
+        labels to each water right.
     """
 
     print("Processing diversions data...")
@@ -163,6 +203,11 @@ def process_diversions_and_reservoirs(synthetic_data_path, output_path, diversio
             realization_coords, time_step_coords, variable_metadata['diversion'],
         )
         combined_ds = combined_ds.assign(diversion_das)
+
+        right_metadata_das = _build_right_metadata_dataarrays(
+            right_id_coord, dat_path, variable_metadata['right_metadata'],
+        )
+        combined_ds = combined_ds.assign(right_metadata_das)
 
     if reservoirs_file_groups:
         first_file = next(iter(reservoirs_file_groups.values()))[0]
