@@ -129,24 +129,31 @@ def _build_variable_dataarrays(csvs_path, file_groups, dim_name, id_coord,
     return dataarrays
 
 def _build_right_metadata_dataarrays(right_id_coord, dat_path, metadata_section):
-    """Loads sector/priority labels for each water right from the basin's `.dat`
-    file, aligned to `right_id_coord`. Rights present in the diversion output but
-    missing from the `.dat` lookup (shouldn't normally happen) get "UNKNOWN"."""
+    """Loads sector/priority labels (both raw and cleaned-up forms, see
+    load_right_sector_priority) for each water right from the basin's `.dat` file,
+    aligned to `right_id_coord`. Rights present in the diversion output but missing
+    from the `.dat` lookup (shouldn't normally happen) get "UNKNOWN" for the string
+    columns; `priority_date` has no string fallback, so it's left null (NaT) same
+    as any date the `.dat` file itself couldn't supply."""
     lookup = load_right_sector_priority(dat_path)
-    aligned = lookup.reindex(right_id_coord.values).fillna("UNKNOWN")
+    aligned = lookup.reindex(right_id_coord.values)
+    aligned[["sector_raw", "sector", "priority_number"]] = (
+        aligned[["sector_raw", "sector", "priority_number"]].fillna("UNKNOWN")
+    )
 
     dataarrays = {}
-    for column in ["sector", "priority_number"]:
+    for column in ["sector_raw", "sector", "priority_number", "priority_date"]:
         metadata = metadata_section[column]
+        # priority_date is a real datetime64 variable: xarray/CF assigns it its own
+        # time-encoding `units` on write, which collides with a manually-set one.
+        attrs = {'long_name': metadata['long_name'], 'description': metadata['description']}
+        if 'units' in metadata:
+            attrs['units'] = metadata['units']
         dataarrays[column] = xr.DataArray(
             aligned[column].to_numpy(),
             dims=['right_id'],
             coords={'right_id': right_id_coord},
-            attrs={
-                'long_name': metadata['long_name'],
-                'units': metadata['units'],
-                'description': metadata['description'],
-            }
+            attrs=attrs
         )
     return dataarrays
 
