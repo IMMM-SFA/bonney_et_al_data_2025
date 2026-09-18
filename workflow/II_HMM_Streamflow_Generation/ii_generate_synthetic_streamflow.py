@@ -20,10 +20,10 @@ from toolkit.data.io import save_netcdf_format, load_netcdf_format
 ### Settings ###
 FORCE_RECOMPUTE = True # Whether to recompute the synthetic streamflow if it already exists
 LOG_TRANSFORM = True # Whether to log transform the data
-N_ENSEMBLES = 1000 # Number of ensembles to generate
+N_ENSEMBLES = 2000 # Number of ensembles to generate
 
 # Disaggregation stencil source: "historical" (default), "9505", or "blend"
-STENCIL_SOURCE = "9505"
+STENCIL_SOURCE = "historical"
 # 9505 period(s) (keys of NINETYFIVEOFIVE_NC_PATHS) to pool when STENCIL_SOURCE != "historical"
 STENCIL_PERIODS = ["2020_2059"]
 
