@@ -17,11 +17,10 @@ from toolkit.paths import synthetic_dataset_path
 
 
 ### Settings ###
-# Use a conservative number of processes to avoid system freeze
-# WRAP simulations are resource-intensive
-num_processes = 3
+# Parallel WRAP workers: WRAP_NUM_PROCESSES env var, else Slurm's --cpus-per-task, else 3
+num_processes = int(os.environ.get("WRAP_NUM_PROCESSES", os.environ.get("SLURM_CPUS_PER_TASK", 3)))
 
-N_ENSEMBLES = 100  # Number of realizations to run through WRAP; None to run all available
+N_ENSEMBLES = None  # Number of realizations to run through WRAP; None to run all available
 
 DAT_SUFFIX = "_initial_storage_median_historical.dat"
 
