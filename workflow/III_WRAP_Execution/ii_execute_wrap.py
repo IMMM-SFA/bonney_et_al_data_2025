@@ -26,10 +26,9 @@ N_ENSEMBLES = 100  # Number of realizations to run through WRAP; None to run all
 DAT_SUFFIX = "_initial_storage_median_historical.dat"
 
 ### Path Configuration ###
-# On HPC, point WRAP_EXEC_PATH to a tmpfs mount (e.g. /dev/shm/wrap_exec) to
-# keep WRAP's ~0.5 GB per-run .OUT writes in RAM and avoid hammering the
-# parallel filesystem. The directory is auto-created by WRAPExecutionSlot.setup().
-WRAP_EXEC_PATH = Path(repo_data_path) / "WRAP" / "wrap_execution_directories"
+# WRAP scratch: tmpfs when available (~1 GB RAM per process), else outputs/
+_TMPFS = Path("/dev/shm")
+WRAP_EXEC_PATH = (_TMPFS / "wrap_exec") if _TMPFS.is_dir() else (outputs_path / "wrap_exec")
 WRAP_SIM_PATH = Path(repo_data_path) / "WRAP" / "SIM.exe"
 
 basins_path = repo_data_path / "configs" / "basins.json"
@@ -131,6 +130,9 @@ def main():
 
                 for process in processes:
                     process.join()
+
+            for slot in slots:
+                slot.teardown()
 
 if __name__ == "__main__":
     main()

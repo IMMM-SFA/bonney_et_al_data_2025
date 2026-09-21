@@ -1,10 +1,8 @@
 import json
 import h5py
 import pandas as pd
-import geopandas as gpd
 import numpy as np
 import xarray as xr
-from os.path import join
 from toolkit import repo_data_path
 import yaml
 from typing import Dict, Any, Optional
@@ -34,19 +32,6 @@ def hdf5_to_dict(filepath):
             else:    
                 data_dict[key] = f[key][:]
     return data_dict
-
-def load_right_latlongs(latlong_gdf_path=None):
-    if latlong_gdf_path is None:
-        latlong_gdf_path = join(repo_data_path, "geospatial", "right_latlongs.geojson")
-    latlongs = gpd.read_file(latlong_gdf_path)
-    latlongs.set_index("water_right_identifier", inplace=True)
-    return latlongs
-
-def load_crb_shape(crb_path=None):
-    if crb_path is None:
-        crb_path = join(repo_data_path, "geospatial", "CRB")
-    crb = gpd.read_file(crb_path)
-    return crb
 
 def load_config(file):
     with open(file) as f:

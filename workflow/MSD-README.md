@@ -197,8 +197,6 @@ data/
 
 **`SIM.exe`** is the WRAP simulation executable (Windows binary, run using Wine on Linux).
 
-**`wrap_execution_directories/`** contains the execution directories used for running WRAP simulations with different streamflow inputs.
-
 ## Usage Examples
 
 ### Load NetCDF file in Python:
