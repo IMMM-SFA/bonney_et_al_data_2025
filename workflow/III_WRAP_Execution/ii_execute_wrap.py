@@ -130,6 +130,12 @@ def main():
                 for process in processes:
                     process.join()
 
+                failed = [p.name for p in processes if p.exitcode != 0]
+                if failed:
+                    raise RuntimeError(
+                        f"{len(failed)}/{len(processes)} WRAP workers failed for {basin_name}: {failed}"
+                    )
+
             for slot in slots:
                 slot.teardown()
 

@@ -188,6 +188,11 @@ def process_diversions_and_reservoirs(synthetic_data_path, output_path, diversio
 
     # However many realizations actually got CSVs is however many WRAP was run for.
     n_ensembles = len(next(iter(diversions_file_groups.values()), next(iter(reservoirs_file_groups.values()), [])))
+    if n_ensembles == 0:
+        raise RuntimeError(
+            f"No WRAP output CSVs found under {diversions_csvs_path} / {reservoirs_csvs_path}; "
+            "run ii_execute_wrap.py first"
+        )
 
     with xr.open_dataset(synthetic_data_path) as ds:
         combined_ds = ds.isel(realization=slice(0, n_ensembles)).load()
