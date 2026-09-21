@@ -1,7 +1,7 @@
 import geopandas as gpd
 import pandas as pd
 import numpy as np
-from typing import List, Tuple
+from typing import List, Set, Tuple
 
 
 def load_gage_and_reach_shapefiles(reach_paths: List[str], gage_paths: List[str]) -> Tuple[gpd.GeoDataFrame, gpd.GeoDataFrame]:
@@ -112,3 +112,37 @@ def associate_gages_to_reaches(gages_gdf: gpd.GeoDataFrame, reaches_gdf: gpd.Geo
     results = results[results['associated_gage_idx'].notna()]
 
     return results
+
+
+def find_huc8_codes_for_reaches(reach_paths: List[str], comids: List[int]) -> Set[str]:
+    """
+    Look up the HUC8 subregion covering each of the given reach COMIDs, by matching
+    against the COMID/HUC08 attributes of the given NHDFlowline shapefiles. Used to
+    scope the 9505 download to only the HUC8s that actually contain reaches of interest,
+    instead of every HUC8 under a broader HUC2 region.
+
+    Parameters
+    ----------
+    reach_paths : List[str]
+        Paths to NHDFlowline shapefiles (each must have COMID and HUC08 fields).
+    comids : List[int]
+        Reach COMIDs to look up.
+
+    Returns
+    -------
+    Set[str]
+        Zero-padded 8-digit HUC8 codes covering the given COMIDs.
+    """
+    remaining = set(int(c) for c in comids)
+    huc8_codes = set()
+
+    for path in reach_paths:
+        gdf = gpd.read_file(path, columns=['COMID', 'HUC08'], ignore_geometry=True)
+        matches = gdf[gdf['COMID'].isin(remaining)]
+        huc8_codes.update(str(int(code)).zfill(8) for code in matches['HUC08'])
+        remaining -= set(matches['COMID'])
+
+    if remaining:
+        raise ValueError(f"No HUC8 found for COMIDs (not present in any reach_paths shapefile): {sorted(remaining)}")
+
+    return huc8_codes

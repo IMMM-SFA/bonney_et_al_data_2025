@@ -158,7 +158,6 @@ data/
 │   ├── ensemble_filters.json - Filters for 9505 ensemble subsets used in the experiment.
 │   ├── hmm_synthetic_data_metadata.json - Descriptive metadata for the synthetic streamflow NetCDF outputs.
 │   ├── random_seeds.json - Random seeds used for reproducibility across multiple steps of the experiment.
-│   ├── reaches_of_interest.csv - Reaches extracted from the 9505 data for downstream use in analysis.
 │   └── wrap_variable_metadata.json - Descriptive metadata for the water management outputs of WRAP.
 ├── geospatial/
 │   ├── 9505_shapefiles/ - Shapefiles related to the DOE 9505 dataset.
@@ -176,15 +175,13 @@ data/
 - `flo_file`: The path to the `.FLO` file associated to the basin (used in WRAP simulations).
 - `usgs_gage_id`: USGS gage identifier for the basin outlet (where available).
 - `external_gages`: WRAP control points outside the basin's 9505 model boundary that are filled from historical data (omitted when none).
-- `reservoir_anchors`: Per-reservoir EVA anchor control points used to disaggregate synthetic net evaporation, keyed by EVA site ID. Each entry contains `anchor_cp` (the control point whose historical streamflow most closely correlates with the reservoir's historical net evaporation) and `anchor_correlation`. Empty (`{}`) until populated by the reservoir correlation analysis.
+- `reservoir_anchors`: Per-reservoir EVA anchor control points used to disaggregate synthetic net evaporation, keyed by EVA site ID. Every EVA site gets an entry. Each entry contains `anchor_cp` (the control point whose historical annual flow best fits the reservoir's historical annual net evaporation via an EVA ~ log(flow) OLS regression) and `anchor_r_squared` (that fit's R²). Empty (`{}`) until populated by the reservoir anchor analysis.
 
 **`ensemble_filters.json`** defines the different subsets of the 9505 ensemble used for training the BHMM models.
 
 **`hmm_synthetic_data_metadata.json`** contains descriptive metadata for the variables and coordinates in the synthetic streamflow NetCDF outputs.
 
 **`wrap_variable_metadata.json`** contains metadata for all WRAP output variables, including units, descriptions, and names for diversion and reservoir variables.
-
-**`reaches_of_interest.csv`** lists the specific river reaches (COMIDs) extracted from the 9505 dataset for each basin.
 
 **`random_seeds.json`** contains random seeds used for reproducibility.
 
@@ -199,8 +196,6 @@ data/
 **`basin_wams/`** contains the Water Availability Model (WAM) files for each basin, including basin configuration files, water right data, reservoir data, and diversion data.
 
 **`SIM.exe`** is the WRAP simulation executable (Windows binary, run using Wine on Linux).
-
-**`wrap_execution_directories/`** contains the execution directories used for running WRAP simulations with different streamflow inputs.
 
 ## Usage Examples
 

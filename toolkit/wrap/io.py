@@ -22,9 +22,20 @@ def df_to_evp(evap_df: DataFrame, file_name: str):
             year_df = evap_df[evap_df.index.year == year]
             for site in sites:
                 line = f"{site}{year:>8}"
-                for num in year_df[site]:
+                for month, num in zip(year_df.index.month, year_df[site]):
                     num = float(num)
-                    line += f"{num: 8.3f}"
+                    if not np.isfinite(num):
+                        raise ValueError(
+                            f"df_to_evp: non-finite value ({num}) for site {site!r}, "
+                            f"{year}-{month:02d}; WRAP's Fortran reader can't parse that."
+                        )
+                    field = f"{num: 8.3f}"
+                    if len(field) > 8:
+                        raise ValueError(
+                            f"df_to_evp: value {num} for site {site!r}, {year}-{month:02d} "
+                            f"doesn't fit the fixed 8-char EVA field ({field!r})."
+                        )
+                    line += field
                 line += "\n"
                 file.write(line)
 
@@ -623,21 +634,76 @@ def out_to_dfs(out_file, dfs_to_parse=None):
     return result
 
 
-def process_right_sectors(dat_file_path, filter_sectors=True, sectors=None):
-    dat = pd.read_csv(dat_file_path)
+def _bucket_use(use, sectors):
+    """Maps one raw WRAP `use` code to a broad sector via substring match, or
+    "OTHER" if it's blank/unmatched. See `process_right_sectors`."""
+    if not isinstance(use, str):
+        return "OTHER"
+    for sector in sectors:
+        if sector in use:
+            return sector
+    return "OTHER"
+
+
+def process_right_sectors(water_rights, filter_sectors=True, sectors=None):
+    """Buckets raw WRAP `use` codes (e.g. "UTIRR", "LTMUN") from a water rights
+    DataFrame into broad sector categories via substring match.
+
+    :param water_rights: water rights DataFrame, e.g. from `dat_to_df`
+    :param filter_sectors: if True, drop rows whose `use` doesn't match any sector;
+        if False, keep every row and bucket unmatched `use` values as "OTHER"
+    :param sectors: sector codes to bucket `use` into, checked in order (default
+        ["IND", "IRR", "MIN", "MUN", "POW", "REC"])
+
+    :return: copy of `water_rights` with `use` replaced by its bucketed sector
+    """
+    if sectors is None:
+        sectors = ["IND", "IRR", "MIN", "MUN", "POW", "REC"]
+
+    water_rights = water_rights.copy()
+    water_rights["use"] = water_rights["use"].apply(lambda use: _bucket_use(use, sectors))
     if filter_sectors:
-        if sectors is None:
-            sectors = ["IND", "IRR", "MIN", "MUN", "POW", "REC"]
+        water_rights = water_rights[water_rights["use"].isin(sectors)]
 
-        def process_use(row):
-            for sector in sectors:
-                try:
-                    if sector in row.use:
-                        return sector
-                except TypeError:
-                    return "nan"
+    return water_rights
 
-        dat.use = dat.apply(process_use, axis=1)
-        dat = dat[dat.use.isin(sectors)]
-    
-    return dat
+
+def load_right_sector_priority(dat_file_path, sectors=None):
+    """Builds a per-water-right sector and priority lookup from a WRAP `.DAT` file,
+    keeping both the raw and cleaned-up form of each: `use` codes and priority
+    numbers are noisy in practice (see `_bucket_use`'s "OTHER" fallback and the
+    non-date priority sentinels below), so callers that need to audit or handle
+    that noise themselves shouldn't have to re-parse the `.DAT` file to get it.
+
+    :param dat_file_path: path to the WRAP `.DAT` file
+    :param sectors: sector codes to bucket the raw `use` field into, see
+        `process_right_sectors`
+
+    :return: DataFrame indexed by `water_right_identifier` with columns:
+        - `sector_raw`: verbatim WR record `use` field (e.g. "UTIRR", "XMONTH")
+        - `sector`: `sector_raw` bucketed into IND/IRR/MIN/MUN/POW/REC/OTHER
+        - `priority_number`: verbatim WR record `priority_number` field, usually
+          but not always a YYYYMMDD date -- some rights carry non-date sentinel
+          values (e.g. "99999999", small sequence numbers, malformed digits)
+        - `priority_date`: `priority_number` parsed as a YYYYMMDD date, NaT where
+          it isn't a valid date rather than a bogus parsed value
+
+    A handful of `water_right_identifier`s (seen so far only in the Colorado WAM)
+    repeat across multiple WR records -- e.g. one identifier used at several
+    control points, or with several supplemental priority dates. Since diversion
+    output is already one series per `water_right_identifier` (WRAP output ties
+    to it directly, with no finer-grained key), only the first WR record for a
+    given identifier, in `.DAT` file order, is kept here.
+    """
+    water_rights = dat_to_df(dat_file_path)
+    if sectors is None:
+        sectors = ["IND", "IRR", "MIN", "MUN", "POW", "REC"]
+
+    result = water_rights[["water_right_identifier", "use", "priority_number"]].rename(
+        columns={"use": "sector_raw"}
+    )
+    result["sector"] = result["sector_raw"].apply(lambda use: _bucket_use(use, sectors))
+    result["priority_date"] = pd.to_datetime(result["priority_number"], format="%Y%m%d", errors="coerce")
+    result = result.drop_duplicates(subset="water_right_identifier", keep="first")
+
+    return result.set_index("water_right_identifier")

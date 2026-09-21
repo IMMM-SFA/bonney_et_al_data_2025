@@ -2,7 +2,7 @@ import json
 
 from toolkit import repo_data_path
 from toolkit.wrap.io import evp_to_df, flo_to_df
-from toolkit.wrap.reservoir_anchors import best_anchors, compute_annual_loglog_r2, resolve_eva_flo_paths
+from toolkit.wrap.reservoir_anchors import best_anchors, compute_annual_semilog_r2, resolve_eva_flo_paths
 
 ### Settings ###
 # None
@@ -14,12 +14,13 @@ BASINS_PATH = repo_data_path / "configs" / "basins.json"
 
 
 def assign_basin_anchors(basin_name: str, basin_config: dict) -> dict:
-    """Fit log(EVA) ~ log(flow) between this basin's EVA sites and its FLO control points,
-    and anchor each site to its single best-fitting (highest R^2) control point."""
+    """Fit EVA ~ log(flow) (semi-log) between this basin's EVA sites and its FLO control
+    points, and anchor each site to its single best-fitting (highest R^2) control point.
+    """
     eva_path, flo_path = resolve_eva_flo_paths(basin_config)
     eva_df = evp_to_df(str(eva_path))
     flo_df = flo_to_df(str(flo_path))
-    summary = best_anchors(compute_annual_loglog_r2(eva_df, flo_df))
+    summary = best_anchors(compute_annual_semilog_r2(eva_df, flo_df))
 
     anchors = {
         eva_site: {

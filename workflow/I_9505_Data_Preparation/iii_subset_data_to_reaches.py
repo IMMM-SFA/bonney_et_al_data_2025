@@ -1,12 +1,14 @@
 """
 This script subsets the 9505 data to the reaches of interest and saves it to a NetCDF file.
+Reaches of interest are the ones the basins' WRAP control points actually map to (see
+pcp_to_reach_mapping.csv, produced by i_associate_pcp_and_reaches.py, which must run first).
 """
 
 import xarray as xr
 import numpy as np
 import pandas as pd
 import os
-from toolkit import repo_data_path, outputs_path
+from toolkit import outputs_path
 
 
 ### Settings ###
@@ -17,7 +19,7 @@ data_root = outputs_path / "9505" / "raw"  # Change to actual data directory
 output_root = outputs_path / "9505" / "reach_subset"  # Change this to where you want to save the files
 output_root.mkdir(parents=True, exist_ok=True)
 
-desired_reaches = pd.read_csv(repo_data_path / "configs" / "reaches_of_interest.csv")
+pcp_reach_mapping_path = outputs_path / "9505" / "pcp_to_reach_mapping.csv"
 
 ### Functions ###
 def process_huc8_file(nc_file, desired_reaches):
@@ -106,15 +108,15 @@ def process_folder(folder, desired_reaches, force_compute=False):
             time_idx = np.searchsorted(all_time, time_mn)
             data_out[i, time_idx] = data
 
-    # Create xarray dataset
+    # Create xarray dataset: one reach_<COMID> variable per reach, dims [time_mn].
+    # This is the schema toolkit.data.ninetyfiveofive and downstream stage IV
+    # conversion (iv_combine_nc_files_and_convert_units.py) expect.
     ds_out = xr.Dataset(
         {
-            "streamflow": (["reach", "time_mn"], data_out)
+            f"reach_{reach}": (["time_mn"], data_out[i, :])
+            for i, reach in enumerate(all_reaches)
         },
-        coords={
-            "reach": all_reaches,
-            "time_mn": all_time
-        }
+        coords={"time_mn": all_time}
     )
 
     ds_out.to_netcdf(file_path)
@@ -129,7 +131,13 @@ def process_all_folders(data_root, desired_reaches, force_compute=False):
 ### Main ###
 
 def main():
-    reach_ids = list(desired_reaches.iloc[:, 1])
+    if not pcp_reach_mapping_path.exists():
+        raise FileNotFoundError(
+            f"{pcp_reach_mapping_path} not found. Run i_associate_pcp_and_reaches.py first "
+            "to determine which reaches the basins' WRAP control points need."
+        )
+    pcp_reach_mapping = pd.read_csv(pcp_reach_mapping_path)
+    reach_ids = pcp_reach_mapping["REACH_COMID"].astype(int).unique().tolist()
     process_all_folders(data_root, desired_reaches=reach_ids)
 
 if __name__ == "__main__":

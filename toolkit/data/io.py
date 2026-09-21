@@ -1,12 +1,19 @@
+import json
 import h5py
 import pandas as pd
-import geopandas as gpd
 import numpy as np
 import xarray as xr
-from os.path import join
 from toolkit import repo_data_path
 import yaml
 from typing import Dict, Any, Optional
+
+
+def _load_hmm_synthetic_data_metadata() -> Dict[str, Any]:
+    """Single source of truth for long_name/units/description on the HMM netCDF
+    variables and coordinates
+    """
+    with open(repo_data_path / "configs" / "hmm_synthetic_data_metadata.json") as f:
+        return json.load(f)
 
 
 def dict_to_hdf5(filepath, data_dictionary):
@@ -25,19 +32,6 @@ def hdf5_to_dict(filepath):
             else:    
                 data_dict[key] = f[key][:]
     return data_dict
-
-def load_right_latlongs(latlong_gdf_path=None):
-    if latlong_gdf_path is None:
-        latlong_gdf_path = join(repo_data_path, "geospatial", "right_latlongs.geojson")
-    latlongs = gpd.read_file(latlong_gdf_path)
-    latlongs.set_index("water_right_identifier", inplace=True)
-    return latlongs
-
-def load_crb_shape(crb_path=None):
-    if crb_path is None:
-        crb_path = join(repo_data_path, "geospatial", "CRB")
-    crb = gpd.read_file(crb_path)
-    return crb
 
 def load_config(file):
     with open(file) as f:
@@ -87,75 +81,53 @@ def convert_to_netcdf_format(data_dictionary: Dict[str, Any],
     # Get basin name and filter name from additional metadata
     basin_name = additional_metadata['basin_name']
     subset_name = additional_metadata['subset_name']
-    
+
+    var_metadata = _load_hmm_synthetic_data_metadata()
+    coord_metadata = var_metadata['coordinate_variables']
+
     # Create NetCDF-compatible format
     netcdf_dict = {
         # Data variables
         'synthetic_streamflow': {
             'data': streamflow_data,
             'dims': ['realization', 'time_step', 'gage_id'],
-            'attrs': {
-                'units': 'acre-feet',
-                'description': 'Monthly synthetic streamflow generated from Bayesian HMM',
-            }
+            'attrs': dict(var_metadata['synthetic_streamflow']),
         },
         'annual_wet_dry_state': {
             'data': annual_states_data,
             'dims': ['realization', 'year'],
-            'attrs': {
-                'description': 'HMM hidden states generated for each year and realization. 0 is dry, 1 is wet.',
-                'valid_range': [0, 1]
-            }
+            'attrs': {**var_metadata['annual_wet_dry_state'], 'valid_range': [0, 1]},
         },
-        
+
         # HMM parameters as data variables
         'hmm_parameters': {
             'data': realization_meta,
             'dims': ['realization', 'hmm_parameter_name'],
-            'attrs': {
-                'long_name': 'HMM model parameters',
-                'description': 'Hidden Markov Model parameters for each realization',
-            }
+            'attrs': dict(var_metadata['hmm_parameters']),
         },
-        
+
         # Coordinate variables
         'realization': {
             'data': np.arange(n_realizations),
-            'attrs': {
-                'long_name': 'Realization index',
-                'description': 'Index for each synthetic realization',
-                'units': 'integer ordering'
-            }
+            'attrs': dict(coord_metadata['realization']),
         },
         'time_step': {
             'data': pd.to_datetime(time_index),
-            'attrs': {
-                'long_name': 'Time step',
-                'description': 'Monthly time steps (YYYY-MM-DD)'
-            }
+            'attrs': dict(coord_metadata['time_step']),
         },
         'gage_id': {
             'data': np.array(site_names, dtype='U'),
-            'attrs': {
-                'long_name': 'Gage site names',
-                'description': 'Names of streamflow gages used by WRAP'
-            }
+            'attrs': dict(coord_metadata['gage_id']),
         },
         'year': {
             'data': np.array(year_index, dtype='U'),
-            'attrs': {
-                'long_name': 'Year',
-                'description': 'Year labels for annual_wet_dry_state',
-            }
+            'attrs': dict(coord_metadata['year']),
         },
         'hmm_parameter_name': {
             'data': np.array(realization_meta_labels),
-            'attrs': {
-                'long_name': 'Parameter labels',
-                'description': 'Labels of HMM parameters',
-            }
+            'attrs': dict(coord_metadata['hmm_parameter_name']),
         },
-        
+
         # Global attributes
         'global_attrs': {
             'title': f'Synthetic Streamflow Realizations for {basin_name} generated using {subset_name} subset',

@@ -19,6 +19,8 @@ def select_filter_sets_and_basins(basins: dict, ensemble_config: list, filter_na
     and/or --basin selection, if given. Exits with an error message if a named
     filter or basin isn't found in the configuration.
     """
+    if filter_name is None:
+        filter_name = "All Models"
     if filter_name:
         filter_sets = [fs for fs in ensemble_config if fs["name"] == filter_name]
         if not filter_sets:

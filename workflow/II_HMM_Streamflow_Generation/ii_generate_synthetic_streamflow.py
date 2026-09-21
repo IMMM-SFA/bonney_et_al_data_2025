@@ -20,10 +20,10 @@ from toolkit.data.io import save_netcdf_format, load_netcdf_format
 ### Settings ###
 FORCE_RECOMPUTE = True # Whether to recompute the synthetic streamflow if it already exists
 LOG_TRANSFORM = True # Whether to log transform the data
-N_ENSEMBLES = 1000 # Number of ensembles to generate
+N_ENSEMBLES = 2000 # Number of ensembles to generate
 
 # Disaggregation stencil source: "historical" (default), "9505", or "blend"
-STENCIL_SOURCE = "9505"
+STENCIL_SOURCE = "historical"
 # 9505 period(s) (keys of NINETYFIVEOFIVE_NC_PATHS) to pool when STENCIL_SOURCE != "historical"
 STENCIL_PERIODS = ["2020_2059"]
 
@@ -135,6 +135,10 @@ def generate_synthetic_streamflow(basin_name, basin, ensemble_filters, filter_na
 ### Main ###
 
 def main():
+    print(f"Settings: FORCE_RECOMPUTE={FORCE_RECOMPUTE}, LOG_TRANSFORM={LOG_TRANSFORM}, "
+          f"N_ENSEMBLES={N_ENSEMBLES}, STENCIL_SOURCE={STENCIL_SOURCE!r}, "
+          f"STENCIL_PERIODS={STENCIL_PERIODS}, BIAS_CORRECTION={BIAS_CORRECTION}")
+
     args = parse_filter_basin_args('Generate synthetic streamflow for specific filter-basin combinations')
 
     with open(basins_path, "r") as f:

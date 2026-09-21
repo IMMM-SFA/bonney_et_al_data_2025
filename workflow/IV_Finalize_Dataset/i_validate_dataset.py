@@ -17,11 +17,11 @@ import json
 
 from toolkit import repo_data_path
 from toolkit.utils.workflow_cli import parse_filter_basin_args, select_filter_sets_and_basins
-from toolkit.paths import synthetic_dataset_path
+from toolkit.paths import wrap_augmented_dataset_path
 
 ### Settings ###
 # Set to False if WRAP execution steps have not been run
-INCLUDE_WRAP_VARIABLES = False
+INCLUDE_WRAP_VARIABLES = True
 
 ### Path Configuration ###
 basins_path = repo_data_path / "configs" / "basins.json"
@@ -126,7 +126,7 @@ def validate_synthetic_dataset(file_path: Path, hmm_metadata: dict, wrap_metadat
             else:
                 results["errors"].append(f"Missing required {var_type} variable: {var_name}")
                 results["valid"] = False
-                print(f"\n❌ {var_name} ({var_type}): MISSING")
+                print(f"\n {var_name} ({var_type}): MISSING")
                 continue
         
         # Variable exists - log information
@@ -232,7 +232,7 @@ def print_summary(results: list):
             if result["errors"]:
                 print(f"\n{result['file_path']}:")
                 for error in result["errors"]:
-                    print(f"  ❌ {error}")
+                    print(f"   {error}")
     
     if total_warnings > 0:
         print("\n" + "-"*80)
@@ -247,6 +247,8 @@ def print_summary(results: list):
 ### Main ###
 
 def main():
+    print(f"Settings: INCLUDE_WRAP_VARIABLES={INCLUDE_WRAP_VARIABLES}")
+
     # Parse command line arguments
     args = parse_filter_basin_args('Validate WRAP outputs for specific filter-basin combinations')
 
@@ -279,7 +281,7 @@ def main():
         
         for basin_name, basin in basins.items():
             print(f"  Validating dataset for basin: {basin_name}")
-            dataset_path = synthetic_dataset_path(filter_name, basin_name)
+            dataset_path = wrap_augmented_dataset_path(filter_name, basin_name)
             if not dataset_path.exists():
                 results.append({
                     "file_path": str(dataset_path),

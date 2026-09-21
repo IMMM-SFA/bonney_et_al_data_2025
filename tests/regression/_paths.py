@@ -1,4 +1,5 @@
 """Path constants for WRAP regression tests."""
+import tempfile
 from pathlib import Path
 from toolkit import repo_data_path, outputs_path
 
@@ -10,7 +11,7 @@ REGRESSION_SEED = 20250707
 FLO_FILE = Path(repo_data_path) / "WRAP" / "basin_wams" / "colo-full" / "C3.FLO"
 WAM_PATH = FLO_FILE.parent
 WRAP_SIM_PATH = Path(repo_data_path) / "WRAP" / "SIM.exe"
-WRAP_EXEC_PATH = Path(repo_data_path) / "WRAP" / "wrap_execution_directories"
+WRAP_EXEC_PATH = Path(tempfile.gettempdir()) / "bonney_wrap_regression"
 
 SYNTHETIC_NC_PATH = (
     outputs_path / "bayesian_hmm" / FILTER_NAME / BASIN_NAME.lower()
