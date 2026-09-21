@@ -153,6 +153,13 @@ def convert_to_netcdf_format(data_dictionary: Dict[str, Any],
     return netcdf_dict
 
 
+def strip_datetime_encoding_attrs(ds) -> None:
+    for var in ds.variables.values():
+        if np.issubdtype(var.dtype, np.datetime64):
+            for key in ("units", "calendar"):
+                var.attrs.pop(key, None)
+
+
 def save_netcdf_format(data_dictionary: Dict[str, Any], 
                       output_path: str,
                       additional_metadata: Optional[Dict[str, Any]] = None) -> None:
@@ -201,7 +208,8 @@ def save_netcdf_format(data_dictionary: Dict[str, Any],
     
     # Create Dataset
     ds = xr.Dataset(data_vars, coords=coords, attrs=netcdf_dict['global_attrs'])
-    
+    strip_datetime_encoding_attrs(ds)
+
     # Save to NetCDF
     ds.to_netcdf(output_path)
     

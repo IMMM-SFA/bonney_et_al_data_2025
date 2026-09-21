@@ -14,6 +14,7 @@ from toolkit import repo_data_path, outputs_path
 from toolkit.utils.workflow_cli import parse_filter_basin_args, select_filter_sets_and_basins
 from toolkit.paths import synthetic_dataset_path, wrap_augmented_dataset_path
 from toolkit.wrap.io import load_right_sector_priority
+from toolkit.data.io import strip_datetime_encoding_attrs
 
 
 ### Settings ###
@@ -231,6 +232,7 @@ def process_diversions_and_reservoirs(synthetic_data_path, output_path, diversio
         combined_ds = combined_ds.assign(reservoir_das)
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
+    strip_datetime_encoding_attrs(combined_ds)
     combined_ds.to_netcdf(output_path)
     print(f"Wrote combined dataset ({n_ensembles} realizations) to {output_path}")
 
