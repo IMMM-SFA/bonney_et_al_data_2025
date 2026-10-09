@@ -102,7 +102,7 @@ class LocalWRAPExecutionSlot(WRAPExecutionSlot):
         master, slave = os.openpty()
         try:
             proc = subprocess.Popen(
-                ["wine64", str(self.wrap_exe_path)],
+                [os.environ.get("WINE_CMD", "wine64"), str(self.wrap_exe_path)],
                 cwd=self.slot_dir,
                 stdin=subprocess.PIPE,
                 stdout=slave,

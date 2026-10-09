@@ -35,3 +35,17 @@ def process_reservoir_csv(diversions: DataFrame, column_names):
             dropna=False
         )
     return data
+
+
+def aggregate_over_entities(da, entity_dim, agg, block=100):
+    import numpy as np
+    n = da.sizes["realization"]
+    parts = []
+    for start in range(0, n, block):
+        chunk = da.isel(realization=slice(start, start + block)).load()
+        chunk = chunk.where(np.isfinite(chunk))
+        if da.name == "shortage_ratio":
+            chunk = chunk.where((chunk >= 0) & (chunk <= 1))
+        reduced = chunk.sum(dim=entity_dim, skipna=True) if agg == "sum" else chunk.mean(dim=entity_dim, skipna=True)
+        parts.append(reduced.values)
+    return np.concatenate(parts, axis=0)
