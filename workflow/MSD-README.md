@@ -1,229 +1,126 @@
-# Data Documentation
+# Synthetic streamflow and WRAP water management outputs for three Texas river basins
 
-This dataset contains synthetically generated streamflow realizations paired with corresponding water management outputs from the Water Rights Analysis Package (WRAP) for several river basins in Texas.
+This archive contains an ensemble of synthetic monthly streamflow realizations for the Colorado, Sabine and Trinity river basins in Texas, each paired with the water management outputs obtained by running that realization through the basin's Water Availability Model (WAM) in the Water Rights Analysis Package (WRAP). The code that produced it is at https://github.com/IMMM-SFA/bonney_et_al_data_2025.
 
-The dataset is generated using a Bayesian Hidden Markov Model (BHMM) trained on the [DOE 9505 streamflow projection ensemble](https://hydrosource.ornl.gov/data/datasets/9505v3_1/). A set of 1000 streamflow realizations and corresponding outputs from WRAP are generated for three river basins in Texas using seven different subsets of the 9505 ensemble.
+## What is in the dataset
 
-Basins:
-- Colorado River Basin
-- Trinity River Basin
-- Sabine River Basin
+| Basin    | Outlet control point | Realizations | Months per realization | Period covered | Streamflow gages | Water rights | Reservoirs |
+|----------|----------------------|--------------|------------------------|----------------|------------------|--------------|------------|
+| Colorado | INK20000             | 2,000        | 924                    | 1940 to 2016   | 45               | 2,219        | 527        |
+| Sabine   | IN  SRSL             | 2,000        | 708                    | 1940 to 1998   | 27               | 394          | 216        |
+| Trinity  | IN 8TRGB             | 2,000        | 684                    | 1940 to 1996   | 40               | 1,072        | 699        |
 
-A total of 48 streamflow projections from the 9505 dataset are used in this experiment. This consists of 6 different climate models (ACCESS-CM2, BCC-CSM2-MR, CNRM-ESM2-1, MPI-ESM1-2-HR, MRI-ESM2-0, and NorESM2-MM) run under SSP-585. Each climate model is downscaled using two methods (DBCCA or RegCM), bias corrected using two datasets (Daymet or Livneh), and then used to run two different hydrological models for streamflow outputs (PRMS or VIC5).
+Each realization spans the same months as the basin's historical WAM record. The realizations are not forecasts for those calendar years: the dates are the historical record's time axis, reused so that every realization is directly comparable with the historical simulation. The WAM is based in historical operation while the streamflows that are used as input are based on climate models for the 2020-2059 time period.
 
-9505 Subsets:
-- All Models (All 48 ensemble members)
-- Bias Correction - Daymet (The 24 ensemble members which use Daymet bias correction)
-- Bias Correction - Livneh (The 24 ensemble members which use Livneh bias correction)
-- Downscaling - DBCCA (The 24 ensemble members which use DBCCA downscaling)
-- Downscaling - RegCM (The 24 ensemble members which use RegCM downscaling)
-- Hydro Model - PRMS (The 24 ensemble members which use the PRMS hydrological model)
-- Hydro Model - VIC5 (The 24 ensemble members which use the VIC5 hydrological model)
+This repo contains one NetCDF dataset per basin, generated from the 9505 ensemble described below.
 
-For each pair of basin and subset (21 total), the following is performed:
-1. An annual BHMM is fit to the outlet streamflow for the basin using the ensembles of the subset.
-2. A set of 1000 streamflow realizations is generated using the fit BHMM.
-3. The streamflow realizations are simulated in WRAP to obtain water management outputs.
-4. The streamflow realizations and water management outputs are bundled into a single NetCDF.
+## How the dataset was generated
 
-The core files of this archive are the 21 NetCDF files generated from this process. In addition to the core files, there is a `data` folder which contains the data necessary for reproducing the dataset. The details of these two parts of the archive are provided below.
+1. **Training data.** The DOE 9505 streamflow projection ensemble ([HydroSource](https://hydrosource.ornl.gov/data/datasets/9505v3_1/)) provides monthly flow on NHD river reaches. For each basin, the reach nearest the WAM outlet control point was identified, and the 2020 to 2059 projections of 48 ensemble members were extracted: six climate models (ACCESS-CM2, BCC-CSM2-MR, CNRM-ESM2-1, MPI-ESM1-2-HR, MRI-ESM2-0, NorESM2-MM) under SSP5-8.5, each downscaled with two methods (DBCCA, RegCM), bias-corrected to two datasets (Daymet, Livneh), and run through two hydrologic models (PRMS, VIC5).
+2. **Annual model.** A two-state Bayesian hidden Markov model with log-normal emissions was fitted to the annual outlet flow of those members, with priors derived from the basin's historical record.
+3. **Annual realizations.** For each realization a parameter set was drawn from the posterior and an annual outlet trajectory sampled from it. The pooled annual trajectories were then bias-corrected to the historical annual record by empirical quantile mapping, after multiplying the three lowest and three highest historical years by 0.8 and 1.2 respectively to widen the tails.
+4. **Monthly disaggregation.** For each synthetic year an analog year was drawn from the historical record, with years of similar annual outlet flow more likely to be chosen. The outlet's monthly pattern from that analog year was rescaled to the synthetic annual total, and every other control point was set from its ratio to the outlet in the analog year. A small number of control points that lie outside the 9505 model domain or are accounting placeholders (listed as `fixed_control_points` in `basins.json`) carry their historical values unchanged in every realization.
+5. **WRAP simulation.** Each realization was written as a WRAP `.FLO` file together with a synthetic net-evaporation `.EVA` file, built by resampling historical net evaporation at each reservoir from years whose flow at that reservoir's anchor control point resembles the synthetic flow. WRAP was run with the basin's WAM, and the diversion and reservoir outputs were extracted.
+6. **Packaging.** Streamflow, hidden states, model parameters, WRAP outputs and water-right metadata were combined into one NetCDF file per basin, converted to 32-bit floats and compressed into a single NetCDF per basin.
 
+## Files
 
-## NetCDF File Structure
+```
+README.md                                    this file
+Colorado/All Models_colorado_synthetic_dataset.nc
+Sabine/All Models_sabine_synthetic_dataset.nc
+Trinity/All Models_trinity_synthetic_dataset.nc
+data/                                        inputs needed to reproduce the dataset (see below)
+```
 
-The NetCDF files containing synthetic streamflow and water management outputs:
+## NetCDF structure
 
-### File: `{9505_subset}_{basin}_synthetic_dataset.nc`
+### Dimensions
+| Dimension            | Meaning                                                      |
+|----------------------|--------------------------------------------------------------|
+| `realization`        | Index of the synthetic realization, 0 to 1999                |
+| `time_step`          | Monthly time steps (datetime64), first of each month         |
+| `gage_id`            | WRAP control point identifiers for streamflow                |
+| `year`               | Calendar years of the record, as strings, for the annual hidden states |
+| `hmm_parameter_name` | Labels of the HMM parameters                                 |
+| `right_id`           | WRAP water right identifiers                                 |
+| `reservoir_id`       | WRAP reservoir identifiers                                   |
 
-#### Dimensions
-- **`realization`**: Integer identifier for individual realizations
-- **`time_step`**: Monthly time steps (e.g., 1940-01-01 to 2016-12-01)
-- **`gage_id`**: Streamflow gage sites (e.g., INA10000, INA20000, etc.)
-- **`year`**: Annual time steps for hidden states
-- **`hmm_parameter_name`**: HMM parameter labels
-- **`right_id`**: Water right identifiers for diversion data
-- **`reservoir_id`**: Reservoir identifiers for reservoir data
+### Data variables
+Units and descriptions are stored as attributes on each variable and mirror `data/configs/hmm_synthetic_data_metadata.json` and `data/configs/wrap_variable_metadata.json`.
 
-#### Data Variables
+| Variable | Dimensions | Units | Description |
+|----------|------------|-------|-------------|
+| `synthetic_streamflow` | realization, time_step, gage_id | acre-feet | Monthly synthetic streamflow at every control point. |
+| `annual_wet_dry_state` | realization, year | 0 or 1 | The HMM state that emitted each year's annual outlet flow: 0 for the lower-mean state, 1 for the higher-mean state. |
+| `hmm_parameters` | realization, hmm_parameter_name | varies | The posterior parameter draw used for the realization: state means and standard deviations in log space, the transition matrix and the initial state distribution. |
+| `diversion_or_energy_shortage` | realization, time_step, right_id | acre-feet | WRAP shortage for each water right. |
+| `diversion_or_energy_target` | realization, time_step, right_id | acre-feet | WRAP target for each water right. |
+| `shortage_ratio` | realization, time_step, right_id | ratio | `1 - (target - shortage) / target`; 0 is no shortage, 1 is full shortage. Undefined (NaN) where the target is zero. |
+| `reservoir_water_surface_elevation` | realization, time_step, reservoir_id | feet (unverified) | Water surface elevation. |
+| `reservoir_storage_capacity` | realization, time_step, reservoir_id | acre-feet (unverified) | End-of-month storage. |
+| `inflows_to_reservoir_from_stream_flow_depletions` | realization, time_step, reservoir_id | acre-feet (unverified) | Inflow from streamflow depletions. |
+| `inflows_to_reservoir_from_releases_from_other_reservoirs` | realization, time_step, reservoir_id | acre-feet (unverified) | Inflow released from other reservoirs. |
+| `reservoir_net_evaporation_precipitation_volume` | realization, time_step, reservoir_id | acre-feet (unverified) | Net evaporation minus precipitation volume. |
+| `energy_generated` | realization, time_step, reservoir_id | MWh (unverified) | Hydroelectric energy generated. |
+| `reservoir_releases_accessible_to_hydroelectric_power_turbines` | realization, time_step, reservoir_id | acre-feet (unverified) | Releases through turbines. |
+| `reservoir_releases_not_accessible_to_hydroelectric_power_turbines` | realization, time_step, reservoir_id | acre-feet (unverified) | Releases bypassing turbines. |
+| `sector_raw` | right_id | | The water right's `use` code verbatim from the WAM `.DAT` file. |
+| `sector` | right_id | | The use code bucketed into IND, IRR, MIN, MUN, POW, REC or OTHER. |
+| `priority_number` | right_id | | The water right's priority number verbatim from the WAM, usually a YYYYMMDD appropriation date. |
+| `priority_date` | right_id | datetime64 | `priority_number` parsed as a date; null where the number is not a valid date. |
 
-##### 1. `synthetic_streamflow`
-- **Description**: Monthly synthetic streamflow generated from Bayesian HMM.
-- **Dimensions**: `[realization, time_step, site]`
-- **Units**: acre-feet
+### Global attributes
+`basin_name`, `wrap_outflow_gage`, `9505_reach_id`, `subset_name`, `ensemble_filters` (the 9505 subset definition), `n_realizations`, `n_months`, `n_years`, `n_gages`, `n_hmm_parameters`, `start_year`, `end_year`, `creation_date` (of the streamflow generation step), `generation_method`, `temporal_resolution`, `spatial_resolution`, `source`, `title`.
 
-##### 2. `annual_wet_dry_state`
-- **Description**: HMM hidden states for each year and realization. 0 is dry, 1 is wet. For example if the hidden state at realization 2 and year 2000 is 1, that means the streamflow for that year in that specific realization was emitted from the wet state distribution.
-- **Dimensions**: `[realization, year]`
-- **Values**: 0 (dry state) or 1 (wet state)
-
-##### 3. `hmm_parameters`
-- **Description**: Hidden Markov Model parameters used to generate each realization
-- **Dimensions**: `[realization, hmm_parameter_name]`
-
-##### 4. `diversion_or_energy_shortage`
-- **Description**: Water shortage from WRAP model simulation.
-- **Dimensions**: `[realization, time_step, right_id]`
-- **Units**: acre-feet
-
-##### 5. `diversion_or_energy_target`
-- **Description**: Target water allocation from WRAP model simulation.
-- **Dimensions**: `[realization, time_step, right_id]`
-- **Units**: acre-feet
-
-##### 6. `shortage_ratio`
-- **Description**: Water shortage ratio from WRAP model simulation (1 - (target - shortage) / target). 0 means no shortage, 1 means full shortage.
-- **Dimensions**: `[realization, time_step, right_id]`
-- **Units**: ratio [0-1]
-
-##### 7. `reservoir_water_surface_elevation`
-- **Description**: Water surface elevation of reservoirs from WRAP model simulation.
-- **Dimensions**: `[realization, time_step, reservoir_id]`
-- **Units**: feet (unverified)
-
-##### 8. `reservoir_storage_capacity`
-- **Description**: Storage capacity of reservoirs from WRAP model simulation.
-- **Dimensions**: `[realization, time_step, reservoir_id]`
-- **Units**: acre-feet (unverified)
-
-##### 9. `reservoir_inflows_to_reservoir_from_stream_flow_depletions`
-- **Description**: Inflows to reservoirs from stream flow depletions from WRAP model simulation.
-- **Dimensions**: `[realization, time_step, reservoir_id]`
-- **Units**: acre-feet (unverified)
-
-##### 10. `reservoir_inflows_to_reservoir_from_releases_from_other_reservoirs`
-- **Description**: Inflows to reservoirs from releases of other reservoirs from WRAP model simulation.
-- **Dimensions**: `[realization, time_step, reservoir_id]`
-- **Units**: acre-feet (unverified)
-
-##### 11. `reservoir_net_evaporation_precipitation_volume`
-- **Description**: Net evaporation and precipitation volume for reservoirs from WRAP model simulation.
-- **Dimensions**: `[realization, time_step, reservoir_id]`
-- **Units**: acre-feet (unverified)
-
-##### 12. `reservoir_energy_generated`
-- **Description**: Energy generated from hydroelectric power from WRAP model simulation.
-- **Dimensions**: `[realization, time_step, reservoir_id]`
-- **Units**: MWh (unverified)
-
-##### 13. `reservoir_releases_accessible_to_hydroelectric_power_turbines`
-- **Description**: Reservoir releases accessible to hydroelectric power turbines from WRAP model simulation.
-- **Dimensions**: `[realization, time_step, reservoir_id]`
-- **Units**: acre-feet (unverified)
-
-##### 14. `reservoir_releases_not_accessible_to_hydroelectric_power_turbines`
-- **Description**: Reservoir releases not accessible to hydroelectric power turbines from WRAP model simulation.
-- **Dimensions**: `[realization, time_step, reservoir_id]`
-- **Units**: acre-feet (unverified)
-
-#### Coordinate Variables
-
-##### 1. `realization`
-- **Description**: Index for each synthetic realization.
-- **Values**: [0, 1, 2, ..., n_realizations-1]
-
-##### 2. `time_step`
-- **Description**: Monthly time steps (YYYY-MM-DD).
-- **Values**: Datetime strings (e.g., 1940-01-01, 1940-02-01, ...)
-
-##### 3. `gage_id`
-- **Description**: Index of streamflow gage IDs used by WRAP.
-- **Values**: Gage identifiers (e.g., INA10000, INA20000, INA30000, ...)
-
-##### 4. `year`
-- **Description**: Year labels for annual states.
-- **Values**: Year strings (e.g., "1940", "1941", "1942", ...)
-
-##### 5. `hmm_parameter_name`
-- **Description**: Labels of HMM parameters.
-- **Values**: Parameter names (e.g., transition probabilities, emission parameters)
-
-##### 6. `right_id`
-- **Description**: Index of water right identifiers used by WRAP.
-- **Values**: Water right IDs from WRAP model
-
-##### 7. `reservoir_id`
-- **Description**: Index of reservoir identifiers used by WRAP.
-- **Values**: Reservoir IDs from WRAP model
-
+### Notes for users
+- Bias correction is applied to the pooled ensemble, so the distribution of annual outlet flow across all realizations and years matches the historical record (with widened tails), while each realization's sequence of years is as generated by the HMM.
+- A small number of water rights in each WAM are accounting placeholders with very large targets. Basin-wide sums of shortage or target volumes are dominated by them; `shortage_ratio` is bounded per right and can be a useful basis for basin-wide statistics.
+- WRAP reports negative shortages for a few rights under its surplus convention. For those rights `shortage_ratio` falls outside 0 to 1, and it is infinite where the target is also zero.
+- Some `reservoir_id` entries are WRAP accounting constructs rather than physical reservoirs and have no storage output (NaN). Water surface elevation and energy variables are zero in basins whose WAM does not define elevation tables or hydropower rights.
+- `priority_date` is null for rights whose priority number is a sentinel or malformed.
 
 ## `data` folder
 
-The `data` folder contains all the necessary files to reproduce this dataset:
+Everything needed to rerun the workflow. Paths below are relative to `data/`.
 
-### Directory Structure
 ```
-data/
-├── configs/
-│   ├── basins.json - Metadata for the basins used in the experiment.
-│   ├── ensemble_filters.json - Filters for 9505 ensemble subsets used in the experiment.
-│   ├── hmm_synthetic_data_metadata.json - Descriptive metadata for the synthetic streamflow NetCDF outputs.
-│   ├── random_seeds.json - Random seeds used for reproducibility across multiple steps of the experiment.
-│   └── wrap_variable_metadata.json - Descriptive metadata for the water management outputs of WRAP.
-├── geospatial/
-│   ├── 9505_shapefiles/ - Shapefiles related to the DOE 9505 dataset.
-│   └── wrap_gages/ - Shapefiles containing primary control point (gage) locations used by WRAP for each basin.
-└── WRAP/
-    ├── basin_wams/ - Water Availability Models for use with WRAP.
-    └── SIM.exe - WRAP executable file.
+configs/
+  basins.json                       basin definitions (see below)
+  ensemble_filters.json             the 9505 subsets, as filters on member attributes
+  random_seeds.json                 seeds for every random step of the workflow
+  hmm_synthetic_data_metadata.json  attribute metadata for the streamflow and HMM variables
+  wrap_variable_metadata.json       attribute metadata for the WRAP and water-right variables
+geospatial/
+  9505_shapefiles/                  NHD flowline shapefiles for HUC2 regions 11, 12 and 13 (from the 9505 download)
+  wrap_gages/                       primary control point locations for each basin
+WRAP/
+  basin_wams/                       the three WAMs: .DAT (two variants), .DIS, .EVA, .FLO and, for the Colorado, .FAD and .HIS
+  SIM.exe                           the WRAP simulation executable (Windows binary, run through Wine on Linux)
 ```
 
-### Configuration Files
+`basins.json` has one entry per basin with: `gage_name` (the outlet control point), `reach_id` (the 9505 reach associated with it), `flo_file` (path to the WAM's `.FLO`), `usgs_gage_id` (where available), `fixed_control_points` (control points carried unchanged from the historical record) and `reservoir_anchors` (for each reservoir evaporation site, the `anchor_cp` used for evaporation disaggregation and the `anchor_r_squared` of the fit that selected it).
 
-**`basins.json`** contains metadata for the basins. Attributes provided:
-- `gage_name`: The name of the WRAP control point at the outflow gage.
-- `reach_id`: The name of the reach in the 9505 data which has been associated to the outflow gage.
-- `flo_file`: The path to the `.FLO` file associated to the basin (used in WRAP simulations).
-- `usgs_gage_id`: USGS gage identifier for the basin outlet (where available).
-- `external_gages`: WRAP control points outside the basin's 9505 model boundary that are filled from historical data (omitted when none).
-- `reservoir_anchors`: Per-reservoir EVA anchor control points used to disaggregate synthetic net evaporation, keyed by EVA site ID. Every EVA site gets an entry. Each entry contains `anchor_cp` (the control point whose historical annual flow best fits the reservoir's historical annual net evaporation via an EVA ~ log(flow) OLS regression) and `anchor_r_squared` (that fit's R²). Empty (`{}`) until populated by the reservoir anchor analysis.
+The geospatial data are needed only for the first stage of the workflow, which maps control points to 9505 reaches. The shapefiles are a subset of the 9505 download: only HUC2 regions 11, 12 and 13 are included.
 
-**`ensemble_filters.json`** defines the different subsets of the 9505 ensemble used for training the BHMM models.
+## Loading the data in Python
 
-**`hmm_synthetic_data_metadata.json`** contains descriptive metadata for the variables and coordinates in the synthetic streamflow NetCDF outputs.
+Requires `xarray` and `netCDF4` or `h5netcdf`.
 
-**`wrap_variable_metadata.json`** contains metadata for all WRAP output variables, including units, descriptions, and names for diversion and reservoir variables.
-
-**`random_seeds.json`** contains random seeds used for reproducibility.
-
-### Geospatial Data
-
-**`9505_shapefiles/`** contains the National Hydrography Dataset (NHD) flowline shapefiles for HUC2 regions 11, 12, and 13, used for associating streamflow reaches with control points. Other data provided by the 9505 dataset is also included, but not needed for the reproducibility of this dataset. This data was downloaded from the [hydrosource webpage](https://hydrosource.ornl.gov/data/datasets/9505v3_1/).
-
-**`wrap_gages/`** contains shapefiles with the primary control point locations for each basin, used to identify the outlet gages for WRAP simulations.
-
-### WRAP Model Files
-
-**`basin_wams/`** contains the Water Availability Model (WAM) files for each basin, including basin configuration files, water right data, reservoir data, and diversion data.
-
-**`SIM.exe`** is the WRAP simulation executable (Windows binary, run using Wine on Linux).
-
-## Usage Examples
-
-### Load NetCDF file in Python:
 ```python
 import xarray as xr
 
-# Load the dataset
-ds = xr.open_dataset('colorado_synthetic_dataset.nc')
+ds = xr.open_dataset("Colorado/All Models_colorado_synthetic_dataset.nc")
 
-# Access streamflow data
-streamflow = ds['synthetic_streamflow']  # [realization, time_step, site]
+streamflow = ds["synthetic_streamflow"]            # (realization, time_step, gage_id)
+outlet = streamflow.sel(gage_id=ds.attrs["wrap_outflow_gage"])
+annual_outlet = outlet.groupby("time_step.year").sum()
 
-# Access shortage data
-shortage = ds['shortage_ratio']  # [realization, time_step, right_id]
+shortage_ratio = ds["shortage_ratio"]             # (realization, time_step, right_id)
+municipal = shortage_ratio.sel(right_id=ds["sector"] == "MUN")
 
-# Access annual states
-annual_states = ds['annual_wet_dry_state']  # [realization, year]
-
-# Access HMM parameters
-hmm_params = ds['hmm_parameters']  # [realization, hmm_parameter_name]
-
-# Access diversion data
-diversion_shortage = ds['diversion_or_energy_shortage']  # [realization, time_step, right_id]
-diversion_target = ds['diversion_or_energy_target']  # [realization, time_step, right_id]
-
-# Access reservoir data
-reservoir_elevation = ds['reservoir_water_surface_elevation']  # [realization, time_step, reservoir_id]
-reservoir_capacity = ds['reservoir_storage_capacity']  # [realization, time_step, reservoir_id]
-energy_generated = ds['reservoir_energy_generated']  # [realization, time_step, reservoir_id]
+storage = ds["reservoir_storage_capacity"]        # (realization, time_step, reservoir_id)
+states = ds["annual_wet_dry_state"]               # (realization, year)
 ```
+
+The three-dimensional WRAP variables are large (the Colorado shortage variables are 2,000 by 924 by 2,219). Select a subset of realizations or rights before calling `.values` or `.load()`.

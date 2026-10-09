@@ -1,3 +1,4 @@
+import os
 import re
 import shutil
 import subprocess
@@ -68,8 +69,14 @@ class WRAPExecutionSlot(ABC):
             df_to_evp(eva_df, self.slot_dir / f"{self.base_name}.EVA")
         self._invoke_wrap()
         now = datetime.now()
+        out_path = self.slot_dir / f"{self.base_name}.OUT"
+        if not out_path.exists():
+            raise RuntimeError(
+                f"WRAP produced no {out_path.name} in {self.slot_dir} for {flo_name}; "
+                "SIM.exe crashed or was never invoked"
+            )
         print(f"[{now.strftime('%H:%M:%S')}] {self.base_name} done ({self.slot_dir.name})")
-        (self.slot_dir / f"{self.base_name}.OUT").rename(self.slot_dir / f"{flo_name}.OUT")
+        out_path.rename(self.slot_dir / f"{flo_name}.OUT")
         (self.slot_dir / f"{self.base_name}.MSS").rename(self.slot_dir / f"{flo_name}.MSS")
         (self.slot_dir / f"{self.base_name}.FLO").unlink()
         return flo_name
@@ -87,11 +94,35 @@ class LocalWRAPExecutionSlot(WRAPExecutionSlot):
         self.wrap_exe_path = Path(wrap_exe_path)
 
     def _invoke_wrap(self):
-        subprocess.run(
-            f"(echo {self.base_name} && echo {self.base_name}) | wine64 {self.wrap_exe_path}",
-            cwd=self.slot_dir,
-            shell=True,
-        )
+        # SIM.exe writes prompts to the Windows console (CONOUT$). Wine only creates a console
+        # when a standard stream is a terminal, so under nohup/Slurm (all streams redirected)
+        # the Fortran runtime aborts with "error during write, unit -1, file CONOUT$". Giving
+        # stdout/stderr a pseudo-terminal keeps the console available; stdin stays a pipe so
+        # the two base-name answers are followed by EOF as before.
+        master, slave = os.openpty()
+        try:
+            proc = subprocess.Popen(
+                [os.environ.get("WINE_CMD", "wine64"), str(self.wrap_exe_path)],
+                cwd=self.slot_dir,
+                stdin=subprocess.PIPE,
+                stdout=slave,
+                stderr=slave,
+                env={**os.environ, "WINEDEBUG": os.environ.get("WINEDEBUG", "-all")},
+            )
+        finally:
+            os.close(slave)
+        proc.stdin.write(f"{self.base_name}\n{self.base_name}\n".encode())
+        proc.stdin.close()
+        try:
+            while True:  # drain console output so SIM.exe never blocks on a full pty buffer
+                try:
+                    if not os.read(master, 65536):
+                        break
+                except OSError:
+                    break
+        finally:
+            os.close(master)
+        proc.wait()
 
 
 class SingularityWRAPExecutionSlot(WRAPExecutionSlot):

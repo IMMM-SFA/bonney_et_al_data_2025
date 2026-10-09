@@ -1,5 +1,7 @@
 """
-This script loads synthetic streamflow data and produces exploratory plots.
+Diagnostics for the HMM stage: model-fit plots for each trained BHMM (MCMC convergence,
+HMM state structure, fit against the 9505 training data) and exploratory plots of the
+generated synthetic streamflow against the historical record.
 """
 import numpy as np
 import pandas as pd
@@ -8,6 +10,9 @@ import seaborn as sns
 import json
 
 from toolkit.data.io import load_netcdf_format
+from toolkit.data.ninetyfiveofive import load_doe_data
+from toolkit.hmm.model import BayesianStreamflowHMM
+from toolkit.graphics.hmm import plot_results, plot_diagnostics, plot_hmm_diagnostics
 from toolkit.wrap.io import flo_to_df
 from toolkit.hmm.metrics import compute_drought_metrics_ensemble
 from toolkit.graphics.hmm import plot_drought_metrics
@@ -17,9 +22,38 @@ from toolkit import repo_data_path, outputs_path
 
 sns.set_style("whitegrid")
 
+### Settings ###
+MODEL_DIAGNOSTICS = True  # MCMC / HMM diagnostic plots for each trained model
+PERIOD = "2020_2059"  # 9505 training period (must match i_train_hmm_models.py)
+LOG_TRANSFORM = True
+
+### Path Configuration ###
 basins_path = repo_data_path / "configs" / "basins.json"
 ensemble_filters_path = repo_data_path / "configs" / "ensemble_filters.json"
+nc_file_path = outputs_path / "9505" / "reach_subset_combined" / f"master_streamflow_{PERIOD}_af.nc"
 output_dir = outputs_path / "bayesian_hmm"
+
+### Functions ###
+
+def plot_model_diagnostics(basin_name, basin, ensemble_filters, filter_name):
+    """MCMC convergence, HMM-specific diagnostics and fit-vs-training-data plots for the
+    saved model, written next to it under outputs/bayesian_hmm/<filter>/<basin>/."""
+    model_dir = basin_filter_dir(filter_name, basin_name)
+    model_path = model_dir / f"{basin_name}_{filter_name}_model"
+    if not model_path.with_suffix(".nc").exists():
+        print(f"Model not found at {model_path}; skipping model diagnostics")
+        return
+
+    doe_data, _ = load_doe_data(
+        nc_file=nc_file_path, flo_file=repo_data_path / basin["flo_file"],
+        gage_name=basin["gage_name"], reach_id=basin["reach_id"], period=PERIOD,
+        aggregate_annually=True, log1p_transform=LOG_TRANSFORM, ensemble_filters=ensemble_filters,
+    )
+    model = BayesianStreamflowHMM.load(str(model_path))
+    print(f"Model diagnostics for {basin_name} ({filter_name}) -> {model_dir}")
+    plot_diagnostics(model.idata, output_dir=model_dir)
+    plot_hmm_diagnostics(model.idata, doe_data, output_dir=model_dir)
+    plot_results(model.idata, doe_data, model.predict_states(doe_data), n_states=2, output_dir=model_dir)
 
 def load_synthetic_data(basin_name, filter_name):
     """Load synthetic streamflow data from NetCDF file."""
@@ -297,6 +331,8 @@ def main():
         print(f"\nProcessing filter: {filter_name}")
         
         for basin_name, basin in basins.items():
+            if MODEL_DIAGNOSTICS:
+                plot_model_diagnostics(basin_name, basin, filter_set["filters"], filter_name)
             explore_streamflow(basin_name, basin, filter_name)
     
     # Generate summary tables for each basin across all filters

@@ -1,10 +1,8 @@
 """
-Loads the finalized (archived) synthetic dataset, streamflow plus integrated WRAP
-diversion/reservoir outputs, and produces exploratory plots.
-
-Streamflow plots mirror workflow/II_HMM_Streamflow_Generation/iii_explore_streamflow.py;
-WRAP plots follow the same shapes (correlation matrix, annual time series across
-realizations, summary statistics) applied to diversion and reservoir variables.
+Loads the finalized (archived) datasets and produces end-of-pipeline diagnostics:
+streamflow plots at the outlet gage (mirroring II_HMM_Streamflow_Generation/iii_explore_streamflow.py,
+but read from the compressed archive files) and per-basin summary tables of streamflow
+and WRAP statistics for the paper. WRAP-variable plots live in III_WRAP_Execution/iv_explore_wrap_outputs.py.
 """
 import numpy as np
 import pandas as pd
@@ -14,9 +12,8 @@ import seaborn as sns
 import json
 from matplotlib.lines import Line2D
 
-from toolkit.wrap.io import flo_to_df, out_to_dfs
-from toolkit.wrap.processing import process_diversion_csv, process_reservoir_csv
-from toolkit.wrap.execution_slot import LocalWRAPExecutionSlot
+from toolkit.wrap.io import flo_to_df
+from toolkit.wrap.processing import aggregate_over_entities
 from toolkit.hmm.metrics import compute_drought_metrics_ensemble
 from toolkit.graphics.hmm import plot_drought_metrics
 from toolkit.utils.workflow_cli import parse_filter_basin_args, select_filter_sets_and_basins
@@ -27,15 +24,9 @@ sns.set_style("whitegrid")
 
 basins_path = repo_data_path / "configs" / "basins.json"
 ensemble_filters_path = repo_data_path / "configs" / "ensemble_filters.json"
-output_dir = outputs_path / "data_archive"
-
-WRAP_SIM_PATH = repo_data_path / "WRAP" / "SIM.exe"
-HISTORICAL_WRAP_SLOT_DIR = outputs_path / "data_archive" / "_historical_wrap_run"
-
-# Must match the DAT_SUFFIX the synthetic ensemble was actually run with (see
-# ii_execute_wrap.py): the historical baseline should reflect the same WAM
-# scenario as what it's being compared against.
-DAT_SUFFIX = "_initial_storage_median_historical.dat"
+# Plots and summary tables go here, not into the archive folder itself, so
+# outputs/data_archive stays exactly what gets published.
+output_dir = outputs_path / "final_exploration"
 
 N_REALIZATIONS_TO_PLOT = 10
 RANDOM_SEED = 42
@@ -51,63 +42,6 @@ def load_final_dataset(basin_name, filter_name):
         return None
 
     return xr.open_dataset(nc_path)
-
-def run_historical_wrap(basin_name, basin):
-    """Run WRAP once on the historical FLO record to get a historical shortage_ratio
-    / reservoir net evaporation baseline in the same right_id/reservoir_id space as
-    the synthetic runs. These are WRAP outputs, not raw inputs like streamflow, so
-    there's no historical record for them without actually simulating. Cached to
-    disk, keyed by DAT_SUFFIX so a scenario switch can't silently serve a baseline
-    computed under a different one.
-    """
-    if DAT_SUFFIX.lower() == ".dat":
-        scenario = "default"
-    else:
-        stem = DAT_SUFFIX[:-len(".dat")] if DAT_SUFFIX.lower().endswith(".dat") else DAT_SUFFIX
-        scenario = stem.strip("_.") or "default"
-    cache_dir = output_dir / basin_name / "historical_wrap" / scenario
-    shortage_ratio_cache = cache_dir / "shortage_ratio.csv"
-    reservoir_evap_cache = cache_dir / "reservoir_net_evaporation_precipitation_volume.csv"
-
-    if shortage_ratio_cache.exists() and reservoir_evap_cache.exists():
-        shortage_ratio_df = pd.read_csv(shortage_ratio_cache, index_col=0, parse_dates=True)
-        reservoir_evap_df = pd.read_csv(reservoir_evap_cache, index_col=0, parse_dates=True)
-        return shortage_ratio_df, reservoir_evap_df
-
-    flo_file = repo_data_path / basin["flo_file"]
-    base_name = flo_file.stem
-    slot_dir = HISTORICAL_WRAP_SLOT_DIR / basin_name
-    slot = LocalWRAPExecutionSlot(slot_dir, flo_file.parent, WRAP_SIM_PATH, base_name, dat_suffix=DAT_SUFFIX)
-    slot.teardown()
-    slot.setup()
-
-    print(f"Running WRAP on the historical record for {basin_name} (one-time, cached after)...")
-    flo_name = slot.run(flo_file)
-
-    out_file = slot.slot_dir / f"{flo_name}.OUT"
-    mss_file = slot.slot_dir / f"{flo_name}.MSS"
-    dfs = out_to_dfs(out_file)
-
-    diversion_data = process_diversion_csv(
-        dfs["diversions"],
-        column_names=["diversion_or_energy_shortage", "diversion_or_energy_target"],
-        compute_shortage_ratio=True)
-    reservoir_data = process_reservoir_csv(
-        dfs["reservoirs"],
-        column_names=["reservoir_net_evaporation_precipitation_volume"])
-
-    out_file.unlink()
-    mss_file.unlink()
-    slot.teardown()
-
-    shortage_ratio_df = diversion_data["shortage_ratio"]
-    reservoir_evap_df = reservoir_data["reservoir_net_evaporation_precipitation_volume"]
-
-    cache_dir.mkdir(parents=True, exist_ok=True)
-    shortage_ratio_df.to_csv(shortage_ratio_cache)
-    reservoir_evap_df.to_csv(reservoir_evap_cache)
-
-    return shortage_ratio_df, reservoir_evap_df
 
 def load_historical_data(basin):
     """Load historical streamflow data from FLO file."""
@@ -239,133 +173,8 @@ def plot_monthly_climatology(ds, hist_monthly, gage_name, basin_name, filter_nam
 
     print(f"Saved monthly climatology plot to {output_path}")
 
-def plot_annual_wrap_variable(ds, var_name, agg, ylabel, title, basin_name, filter_name, output_path, historical_df=None):
-    """Plot annual (summed-per-year) basin-wide total of a WRAP variable across N
-    random realizations, optionally with a historical baseline overlaid (from a
-    single historical WRAP run, see run_historical_wrap, since these are WRAP
-    outputs, not raw inputs like streamflow, so there's no historical record for
-    them without actually simulating).
-
-    Parameters
-    ----------
-    agg : str
-        'sum' or 'mean': how to aggregate across the variable's entity dimension
-        (right_id or reservoir_id) to get one basin-wide series per realization.
-    historical_df : pd.DataFrame, optional
-        Historical monthly values, index=date, columns=entity (right_id or
-        reservoir_id), same shape/space as run_historical_wrap's output. Summed
-        or averaged across entities the same way as the synthetic ensemble.
-    """
-    da = ds[var_name]
-    entity_dim = 'right_id' if 'right_id' in da.dims else 'reservoir_id'
-
-    basin_total = da.sum(dim=entity_dim) if agg == 'sum' else da.mean(dim=entity_dim, skipna=True)
-    basin_total = basin_total.values  # (n_realizations, n_months)
-
-    time_index = pd.to_datetime(ds['time_step'].values)
-    n_realizations, n_months = basin_total.shape
-    n_years = n_months // 12
-    years = np.arange(int(time_index[0].year), int(time_index[0].year) + n_years)
-
-    n_to_plot = min(N_REALIZATIONS_TO_PLOT, n_realizations)
-    rng = np.random.default_rng(RANDOM_SEED)
-    realization_indices = rng.choice(n_realizations, size=n_to_plot, replace=False)
-
-    fig, ax = plt.subplots(figsize=(14, 7))
-
-    for real_idx in realization_indices:
-        realization_data = basin_total[real_idx, :n_years * 12].reshape(n_years, 12)
-        annual_values = realization_data.sum(axis=1) if agg == 'sum' else realization_data.mean(axis=1)
-        ax.plot(years, annual_values, linewidth=1.5, alpha=0.4, color='darkorange')
-
-    legend_elements = [
-        Line2D([0], [0], color='darkorange', linewidth=1.5, alpha=0.6, label=f'Synthetic ({n_to_plot} realizations)')
-    ]
-
-    if historical_df is not None:
-        historical_basin_total = historical_df.sum(axis=1) if agg == 'sum' else historical_df.mean(axis=1)
-        historical_annual = (
-            historical_basin_total.resample('YS').sum() if agg == 'sum'
-            else historical_basin_total.resample('YS').mean()
-        )
-        ax.plot(historical_annual.index.year, historical_annual.values, linewidth=2, alpha=0.8, color='red')
-        legend_elements.append(Line2D([0], [0], color='red', linewidth=2, alpha=0.8, label='Historical'))
-
-    ax.legend(handles=legend_elements, fontsize=11, loc='best')
-
-    ax.set_xlabel('Year', fontsize=12)
-    ax.set_ylabel(ylabel, fontsize=12)
-    ax.set_title(f'{title} - {basin_name} ({filter_name})', fontsize=14, fontweight='bold')
-    ax.grid(True, alpha=0.3)
-
-    plt.tight_layout()
-    plt.savefig(output_path, dpi=300, bbox_inches='tight')
-    plt.close()
-
-    print(f"Saved {var_name} annual plot to {output_path}")
-
-def plot_monthly_climatology_wrap_variable(ds, var_name, agg, ylabel, title, basin_name, filter_name, output_path,
-                                            historical_df=None, percentile_band=(10, 90)):
-    """Plot monthly climatology (mean value per calendar month) for a basin-wide
-    WRAP variable: percentile band + median across all realizations, optionally
-    with a historical baseline overlaid. Mirrors plot_monthly_climatology, but for
-    a WRAP variable aggregated across entities like plot_annual_wrap_variable.
-
-    Parameters
-    ----------
-    agg : str
-        'sum' or 'mean': how to aggregate across the variable's entity dimension
-        (right_id or reservoir_id) to get one basin-wide series per realization.
-        This only affects the entity aggregation; the climatology itself is
-        always a *mean* across years for a given calendar month, regardless of agg.
-    historical_df : pd.DataFrame, optional
-        Historical monthly values, index=date, columns=entity, same shape/space
-        as run_historical_wrap's output.
-    """
-    da = ds[var_name]
-    entity_dim = 'right_id' if 'right_id' in da.dims else 'reservoir_id'
-
-    basin_total = da.sum(dim=entity_dim) if agg == 'sum' else da.mean(dim=entity_dim, skipna=True)
-    basin_total = basin_total.values  # (n_realizations, n_months)
-
-    n_realizations, n_months = basin_total.shape
-    n_years = n_months // 12
-
-    reshaped = basin_total[:, :n_years * 12].reshape(n_realizations, n_years, 12)
-    climatology = reshaped.mean(axis=1)  # (n_realizations, 12)
-
-    months = np.arange(1, 13)
-    median = np.median(climatology, axis=0)
-    lower = np.percentile(climatology, percentile_band[0], axis=0)
-    upper = np.percentile(climatology, percentile_band[1], axis=0)
-
-    fig, ax = plt.subplots(figsize=(10, 6))
-
-    ax.fill_between(months, lower, upper, color='darkorange', alpha=0.2,
-                     label=f'Synthetic {percentile_band[0]}-{percentile_band[1]}th percentile')
-    ax.plot(months, median, color='darkorange', linewidth=2, alpha=0.8, label='Synthetic median')
-
-    if historical_df is not None:
-        historical_basin_total = historical_df.sum(axis=1) if agg == 'sum' else historical_df.mean(axis=1)
-        historical_climatology = historical_basin_total.groupby(historical_basin_total.index.month).mean().reindex(months)
-        ax.plot(months, historical_climatology.values, color='red', linewidth=2, alpha=0.8, label='Historical mean')
-
-    ax.set_xticks(months)
-    ax.set_xticklabels(['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'])
-    ax.set_xlabel('Month', fontsize=12)
-    ax.set_ylabel(ylabel, fontsize=12)
-    ax.set_title(f'{title} - {basin_name} ({filter_name})', fontsize=14, fontweight='bold')
-    ax.legend(fontsize=11, loc='best')
-    ax.grid(True, alpha=0.3)
-
-    plt.tight_layout()
-    plt.savefig(output_path, dpi=300, bbox_inches='tight')
-    plt.close()
-
-    print(f"Saved {var_name} climatology plot to {output_path}")
-
 def explore_final_dataset(basin_name, basin, filter_name):
-    """Generate all exploratory plots (streamflow + WRAP) for a basin/filter combination."""
+    """Generate streamflow diagnostic plots from the archived dataset for a basin/filter combination."""
     print(f"\nExploring final dataset for {basin_name} ({filter_name})")
 
     plot_dir = output_dir / basin_name / "plots"
@@ -420,74 +229,6 @@ def explore_final_dataset(basin_name, basin, filter_name):
     drought_metrics_dir = plot_dir / "drought_metrics"
     plot_drought_metrics(metrics_df, historical_metrics, drought_metrics_dir)
 
-    ### WRAP plots ###
-
-    have_shortage_ratio = 'shortage_ratio' in ds.data_vars
-    have_reservoir_evap = 'reservoir_net_evaporation_precipitation_volume' in ds.data_vars
-
-    historical_shortage_ratio_df, historical_reservoir_evap_df = (None, None)
-    if have_shortage_ratio or have_reservoir_evap:
-        historical_shortage_ratio_df, historical_reservoir_evap_df = run_historical_wrap(basin_name, basin)
-
-    if have_shortage_ratio:
-        # No basin-wide *sum* of diversion_or_energy_shortage/target: a handful of
-        # non-consumptive placeholder rights (bay/estuary inflow requirements,
-        # dummy accounting rights) carry deliberately huge nominal targets, and a
-        # right_id-summed total of the raw acre-foot volumes is completely
-        # dominated by them (see calculate_wrap_statistics). shortage_ratio is
-        # already a bounded per-right ratio though, so a basin-wide *mean* isn't
-        # meaningfully skewed by the same rights (checked: ~0.46 either way, ~1%
-        # difference with/without them), safe to plot below. The per-right
-        # correlation isn't affected either way since it doesn't aggregate across
-        # rights.
-        hist_rights_corr_path = plot_dir / f"{filter_name}_{basin_name.lower()}_historical_shortage_ratio_correlation.png"
-        plot_correlation_matrix(historical_shortage_ratio_df.values,
-                               f'Historical Shortage Ratio Correlation - {basin_name}',
-                               hist_rights_corr_path, vmin=-1, vmax=1)
-
-        rights_corr_path = plot_dir / f"{filter_name}_{basin_name.lower()}_synthetic_shortage_ratio_correlation.png"
-        plot_correlation_matrix(ds['shortage_ratio'].values[random_realization_idx, :, :],
-                               f'Synthetic Shortage Ratio Correlation - {basin_name} ({filter_name})',
-                               rights_corr_path, vmin=-1, vmax=1)
-
-        annual_shortage_ratio_path = plot_dir / f"{filter_name}_{basin_name.lower()}_annual_shortage_ratio.png"
-        plot_annual_wrap_variable(ds, 'shortage_ratio', 'mean',
-                                 'Basin-Wide Mean Shortage Ratio',
-                                 'Mean Shortage Ratio', basin_name, filter_name, annual_shortage_ratio_path,
-                                 historical_df=historical_shortage_ratio_df)
-
-        climatology_shortage_ratio_path = plot_dir / f"{filter_name}_{basin_name.lower()}_shortage_ratio_climatology.png"
-        plot_monthly_climatology_wrap_variable(ds, 'shortage_ratio', 'mean',
-                                 'Basin-Wide Mean Shortage Ratio',
-                                 'Shortage Ratio Climatology', basin_name, filter_name, climatology_shortage_ratio_path,
-                                 historical_df=historical_shortage_ratio_df)
-
-    if have_reservoir_evap:
-        # Net evaporation varies month to month, unlike reservoir_storage_capacity
-        # (a static physical attribute repeated every month; correlating a
-        # constant produces divide-by-zero/NaN).
-        hist_reservoir_corr_path = plot_dir / f"{filter_name}_{basin_name.lower()}_historical_reservoir_evaporation_correlation.png"
-        plot_correlation_matrix(historical_reservoir_evap_df.values,
-                               f'Historical Net Evaporation Correlation - {basin_name}',
-                               hist_reservoir_corr_path, vmin=-1, vmax=1)
-
-        reservoir_corr_path = plot_dir / f"{filter_name}_{basin_name.lower()}_synthetic_reservoir_evaporation_correlation.png"
-        plot_correlation_matrix(ds['reservoir_net_evaporation_precipitation_volume'].values[random_realization_idx, :, :],
-                               f'Synthetic Net Evaporation Correlation - {basin_name} ({filter_name})',
-                               reservoir_corr_path, vmin=-1, vmax=1)
-
-        annual_evap_path = plot_dir / f"{filter_name}_{basin_name.lower()}_annual_reservoir_evaporation.png"
-        plot_annual_wrap_variable(ds, 'reservoir_net_evaporation_precipitation_volume', 'sum',
-                                 'Basin-Wide Annual Net Evaporation (acre-feet)',
-                                 'Annual Net Evaporation', basin_name, filter_name, annual_evap_path,
-                                 historical_df=historical_reservoir_evap_df)
-
-        climatology_evap_path = plot_dir / f"{filter_name}_{basin_name.lower()}_reservoir_evaporation_climatology.png"
-        plot_monthly_climatology_wrap_variable(ds, 'reservoir_net_evaporation_precipitation_volume', 'sum',
-                                 'Basin-Wide Monthly Net Evaporation (acre-feet)',
-                                 'Net Evaporation Climatology', basin_name, filter_name, climatology_evap_path,
-                                 historical_df=historical_reservoir_evap_df)
-
     print(f"All plots saved to {plot_dir}")
 
     ds.close()
@@ -538,7 +279,7 @@ def calculate_wrap_statistics(ds):
         n_realizations, n_months, _ = ds['reservoir_net_evaporation_precipitation_volume'].shape
         n_years = n_months // 12
 
-        basin_evap = ds['reservoir_net_evaporation_precipitation_volume'].sum(dim='reservoir_id').values
+        basin_evap = aggregate_over_entities(ds['reservoir_net_evaporation_precipitation_volume'], 'reservoir_id', 'sum')
         annual_evap = basin_evap[:, :n_years*12].reshape(n_realizations, n_years, 12).sum(axis=2)
         stats['Mean Annual Net Evaporation (AF)'] = np.mean(annual_evap)
 

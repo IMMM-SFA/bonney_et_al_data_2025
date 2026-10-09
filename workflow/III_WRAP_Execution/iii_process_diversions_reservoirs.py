@@ -14,6 +14,7 @@ from toolkit import repo_data_path, outputs_path
 from toolkit.utils.workflow_cli import parse_filter_basin_args, select_filter_sets_and_basins
 from toolkit.paths import synthetic_dataset_path, wrap_augmented_dataset_path
 from toolkit.wrap.io import load_right_sector_priority
+from toolkit.data.io import strip_datetime_encoding_attrs
 
 
 ### Settings ###
@@ -187,6 +188,11 @@ def process_diversions_and_reservoirs(synthetic_data_path, output_path, diversio
 
     # However many realizations actually got CSVs is however many WRAP was run for.
     n_ensembles = len(next(iter(diversions_file_groups.values()), next(iter(reservoirs_file_groups.values()), [])))
+    if n_ensembles == 0:
+        raise RuntimeError(
+            f"No WRAP output CSVs found under {diversions_csvs_path} / {reservoirs_csvs_path}; "
+            "run ii_execute_wrap.py first"
+        )
 
     with xr.open_dataset(synthetic_data_path) as ds:
         combined_ds = ds.isel(realization=slice(0, n_ensembles)).load()
@@ -231,6 +237,7 @@ def process_diversions_and_reservoirs(synthetic_data_path, output_path, diversio
         combined_ds = combined_ds.assign(reservoir_das)
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
+    strip_datetime_encoding_attrs(combined_ds)
     combined_ds.to_netcdf(output_path)
     print(f"Wrote combined dataset ({n_ensembles} realizations) to {output_path}")
 

@@ -19,6 +19,7 @@ import json
 import shutil
 
 from toolkit import repo_data_path, outputs_path
+from toolkit.data.io import strip_datetime_encoding_attrs
 from toolkit.utils.workflow_cli import parse_filter_basin_args, select_filter_sets_and_basins
 from toolkit.paths import wrap_augmented_dataset_path, archived_dataset_path
 
@@ -200,6 +201,7 @@ def optimize_single_file(input_path, output_path):
     output_path.parent.mkdir(parents=True, exist_ok=True)
     
     try:
+        strip_datetime_encoding_attrs(ds)
         ds.to_netcdf(output_path, encoding=encoding, format='NETCDF4')
         ds.close()
         

@@ -3,11 +3,9 @@ This script trains Bayesian Hidden Markov Models (HMM) on the 9505 data.
 """
 import numpy as np
 import json
-import matplotlib.pyplot as plt
 from toolkit.hmm.model import BayesianStreamflowHMM
 from toolkit.data.ninetyfiveofive import load_doe_data, load_historical_data
 from toolkit.hmm.utils import generate_prior_config_from_historical
-from toolkit.graphics.hmm import plot_results, plot_diagnostics, plot_hmm_diagnostics
 from toolkit.utils.random_seeds import set_random_seeds, get_seed
 from toolkit.utils.workflow_cli import parse_filter_basin_args, select_filter_sets_and_basins
 from toolkit.paths import basin_filter_dir
@@ -18,7 +16,6 @@ import arviz as az
 ### Settings ###
 FORCE_RECOMPUTE = True # Whether to recompute the model if it already exists
 LOG_TRANSFORM = True # Whether to log transform the data
-GENERATE_DIAGNOSTICS = True # Whether to generate diagnostic plots
 PERIOD = "2020_2059" # Time period of 9505 data used for training
 
 ### Path Configuration ###
@@ -28,7 +25,7 @@ nc_file_path = outputs_path / "9505" / "reach_subset_combined" / f"master_stream
 
 ### Functions ###
 
-def train_basin_hmm(basin_name, basin, ensemble_filters, filter_name, generate_diagnostics=True):
+def train_basin_hmm(basin_name, basin, ensemble_filters, filter_name):
     """Train HMM for a single basin with a specific set of ensemble filters."""
     
     gage_name = basin["gage_name"]
@@ -57,26 +54,6 @@ def train_basin_hmm(basin_name, basin, ensemble_filters, filter_name, generate_d
         log1p_transform=LOG_TRANSFORM,
         ensemble_filters=ensemble_filters,
     )
-
-    # Diagnostic plot: Compare historical and future data before model fit
-    fig, ax = plt.subplots(1, 1, figsize=(10, 6))
-    ax.hist(hist_data.values, bins=15, alpha=0.7, label='Historical', color='tab:blue', density=True)
-    ax.hist(doe_data.flatten(), bins=15, alpha=0.7, label='9505 2020-2059 (all ensembles)', color='tab:green', density=True)
-    # Add vertical lines for means with white outline
-    hist_mean = np.mean(hist_data.values)
-    future_mean = np.mean(doe_data.flatten())
-    # White outline first, then colored line on top
-    ax.axvline(x=hist_mean, color='white', linestyle='-', linewidth=5, alpha=1.0)
-    ax.axvline(x=hist_mean, color='tab:blue', linestyle='-', linewidth=3, alpha=0.9, label=f'Historical Mean ({np.e**hist_mean:.2f})')
-    ax.axvline(x=future_mean, color='white', linestyle='-', linewidth=5, alpha=1.0)
-    ax.axvline(x=future_mean, color='tab:green', linestyle='-', linewidth=3, alpha=0.9, label=f'Future Mean ({np.e**future_mean:.2f})')
-    ax.set_title(f'Histogram: Annual Log-Transformed Flow (Normalized)\n Gage: {gage_name}, Reach: {reach_id}, Filter: {filter_name}')
-    ax.set_xlabel('log(Flow + 1)')
-    ax.set_ylabel('Density')
-    ax.legend()
-    plt.tight_layout()
-    plt.savefig(output_dir / f'diagnostic_hist_future_vs_hist_{filter_name}.png', dpi=150)
-    plt.close()
 
     # Model path
     model_path = output_dir / f"{basin_name}_{filter_name}_model"
@@ -129,30 +106,14 @@ def train_basin_hmm(basin_name, basin, ensemble_filters, filter_name, generate_d
     if min_ess < 100:
         print(f"  WARNING: Low effective sample size: {min_ess:.0f}")
     
-    # 2. Generate comprehensive diagnostic plots
-    if generate_diagnostics:
-        # General MCMC diagnostics
-        print("  Generating MCMC diagnostics...")
-        plot_diagnostics(model.idata, output_dir=output_dir)
-
-        # HMM-specific diagnostics
-        print("  Generating HMM-specific diagnostics...")
-        plot_hmm_diagnostics(model.idata, doe_data, output_dir=output_dir)
-
-        # Model results with predicted states
-        print("  Generating model results plots...")
-        predicted_states = model.predict_states(doe_data)
-        plot_results(model.idata, doe_data, predicted_states, n_states=2, output_dir=output_dir)
-            
-
-    
+    # Diagnostic plots (MCMC traces, HMM state plots, fit vs. training data) are produced
+    # by iii_explore_streamflow.py from the saved model.
     return model_path
 
 ### Main ###
 
 def main():
-    print(f"Settings: FORCE_RECOMPUTE={FORCE_RECOMPUTE}, LOG_TRANSFORM={LOG_TRANSFORM}, "
-          f"GENERATE_DIAGNOSTICS={GENERATE_DIAGNOSTICS}, PERIOD={PERIOD!r}")
+    print(f"Settings: FORCE_RECOMPUTE={FORCE_RECOMPUTE}, LOG_TRANSFORM={LOG_TRANSFORM}, PERIOD={PERIOD!r}")
 
     # Parse command line arguments
     args = parse_filter_basin_args('Train HMM models for specific filter-basin combinations')
@@ -176,7 +137,7 @@ def main():
         
         for basin_name, basin in basins.items():
             print(f"  Training HMM for basin: {basin_name}")
-            train_basin_hmm(basin_name, basin, ensemble_filters, filter_name, GENERATE_DIAGNOSTICS)
+            train_basin_hmm(basin_name, basin, ensemble_filters, filter_name)
 
 if __name__ == "__main__":
     main()
